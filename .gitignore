@@ -1,0 +1,15 @@
+client/node_modules/
+client/dist/
+client/src-tauri/target/
+server/__pycache__/
+server/app/__pycache__/
+server/app/api/__pycache__/
+server/app/services/__pycache__/
+server/.venv/
+server/build/
+server/dist/
+server/*.db
+server/*.log
+server/__pycache__/
+*.pyc
+.env

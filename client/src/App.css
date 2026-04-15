@@ -1,0 +1,510 @@
+.app-shell {
+  min-height: 100vh;
+  background: #101726;
+  color: #dbe7ff;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid rgba(86, 102, 144, 0.28);
+  background: linear-gradient(180deg, #6897ea 0%, #5d8ad8 100%);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 0.55rem;
+  background: rgba(10, 17, 33, 0.2);
+  color: #101726;
+  font-weight: 800;
+}
+
+.brand strong {
+  display: block;
+  color: #101726;
+  font-size: 1.2rem;
+}
+
+.brand small {
+  color: rgba(16, 23, 38, 0.72);
+}
+
+.main-tabs,
+.inline-actions,
+.qso-actions,
+.subtabs,
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.main-tabs button,
+.subtabs button {
+  border: none;
+  background: transparent;
+  color: rgba(247, 250, 255, 0.9);
+  font: inherit;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.main-tabs button.active,
+.subtabs button.active {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 0.25rem;
+}
+
+.main-tabs button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.header-status {
+  color: rgba(16, 23, 38, 0.82);
+  font-size: 0.9rem;
+}
+
+.app-main {
+  padding: 1rem 1.25rem 1.4rem;
+}
+
+.status-banner {
+  margin-bottom: 1rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(76, 94, 135, 0.4);
+  border-radius: 0.65rem;
+  background: #1a2338;
+  color: #abc2ef;
+}
+
+.page-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.logs-grid,
+.settings-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.logs-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.logs-grid-expanded {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.panel,
+.map-card {
+  border: 1px solid rgba(63, 76, 109, 0.5);
+  border-radius: 0.7rem;
+  background: #202b3f;
+  padding: 1rem;
+}
+
+.compact-panel {
+  padding: 0.85rem 1rem;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-heading h2,
+.section-heading h2 {
+  margin: 0.15rem 0 0;
+  color: #eef4ff;
+  font-size: 1.15rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.72rem;
+  color: #91b2f0;
+}
+
+.muted {
+  color: #8496bf;
+}
+
+.settings-form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.settings-group {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+}
+
+.settings-form label,
+.qso-grid label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.settings-form span,
+.qso-grid span {
+  color: #8fb1f0;
+  font-size: 0.82rem;
+}
+
+.settings-form input,
+.settings-form select,
+.qso-grid input {
+  width: 100%;
+  border: 1px solid rgba(89, 103, 144, 0.5);
+  border-radius: 0.5rem;
+  padding: 0.8rem 0.9rem;
+  background: #11192b;
+  color: #eef4ff;
+  font: inherit;
+}
+
+.settings-form input::placeholder,
+.qso-grid input::placeholder {
+  color: #6c7896;
+}
+
+button,
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.2rem;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid rgba(85, 99, 139, 0.6);
+  border-radius: 0.5rem;
+  background: #647691;
+  color: #f7fbff;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button.primary {
+  background: #19a56f;
+  border-color: #21ca8a;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+button.danger {
+  background: #7b3340;
+  border-color: #a94b5b;
+  color: #ffffff;
+}
+
+button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.pill {
+  min-height: auto;
+  padding: 0.28rem 0.7rem;
+  background: #2e3749;
+  color: #edf4ff;
+}
+
+.logbook-list,
+.spot-list,
+.sync-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.logbook-item,
+.spot-card,
+.sync-list li {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(75, 88, 122, 0.46);
+  border-radius: 0.55rem;
+  background: #12192b;
+  color: inherit;
+  padding: 0.9rem;
+}
+
+.logbook-open {
+  width: 100%;
+  min-height: 0;
+  display: grid;
+  gap: 0.45rem;
+  justify-content: stretch;
+  text-align: left;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.logbook-item-actions {
+  margin-top: 0.85rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.logbook-item.selected,
+.spot-card.selected {
+  border-color: #5778be;
+  background: #182238;
+}
+
+.logbook-item-header,
+.spot-card-header,
+.spot-metadata {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.spot-card {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.spot-metadata span,
+.spot-card small {
+  color: #9eb5e8;
+}
+
+.qso-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.qso-actions,
+.subtabs,
+.settings-summary {
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.lookup-card {
+  margin-top: 1rem;
+  border: 1px solid rgba(72, 91, 130, 0.5);
+  border-radius: 0.6rem;
+  background: #162033;
+  padding: 0.95rem 1rem;
+}
+
+.lookup-card-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.lookup-card-header h3 {
+  margin: 0.15rem 0 0;
+  color: #eff5ff;
+  font-size: 1.05rem;
+}
+
+.lookup-link {
+  color: #9cc0ff;
+  text-decoration: none;
+}
+
+.lookup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.lookup-grid div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.lookup-grid span {
+  color: #8fb1f0;
+  font-size: 0.8rem;
+}
+
+.lookup-grid strong {
+  color: #eef4ff;
+  font-weight: 600;
+}
+
+.entries-table {
+  border: 1px solid rgba(70, 83, 116, 0.45);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: #1c2538;
+}
+
+.entries-header,
+.entries-row {
+  display: grid;
+  grid-template-columns: 1.3fr 0.95fr 0.8fr 0.65fr 0.75fr 0.85fr 1.1fr 0.8fr;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+}
+
+.entries-header {
+  background: #253148;
+  color: #94b5f3;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.entries-row {
+  border-top: 1px solid rgba(83, 97, 132, 0.28);
+}
+
+.entries-row:nth-child(even) {
+  background: rgba(12, 18, 30, 0.22);
+}
+
+.entries-row strong {
+  color: #edf3ff;
+}
+
+.spots-pane,
+.empty-state {
+  margin-top: 1rem;
+}
+
+.spot-controls {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1.4fr) repeat(2, minmax(10rem, 0.7fr)) auto;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.spot-controls input,
+.spot-controls select {
+  border: 1px solid rgba(89, 103, 144, 0.5);
+  border-radius: 0.5rem;
+  padding: 0.8rem 0.9rem;
+  background: #11192b;
+  color: #eef4ff;
+  font: inherit;
+}
+
+.spot-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+  color: #8ea5d8;
+  font-size: 0.9rem;
+}
+
+.spot-list {
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.spot-card {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+  min-height: 13rem;
+}
+
+.spot-card.worked-today {
+  border-color: rgba(38, 180, 118, 0.7);
+  background: linear-gradient(180deg, #142234 0%, #162438 100%);
+  box-shadow: inset 0 0 0 1px rgba(28, 202, 137, 0.15);
+}
+
+.spot-card p {
+  margin: 0;
+  color: #d8e3fb;
+}
+
+.spot-card-actions {
+  display: flex;
+  gap: 0.7rem;
+  margin-top: auto;
+}
+
+.spot-card-actions button {
+  flex: 1;
+}
+
+.empty-state {
+  padding: 1rem;
+  border: 1px dashed rgba(89, 103, 144, 0.5);
+  border-radius: 0.6rem;
+  color: #8ea5d8;
+}
+
+.sync-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+}
+
+.sync-list li strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.world-map {
+  min-height: 24rem;
+  overflow: hidden;
+  border: 1px solid rgba(68, 84, 118, 0.5);
+  border-radius: 0.55rem;
+  background: #0d1624;
+}
+
+.hidden-input {
+  display: none;
+}
+
+@media (max-width: 1200px) {
+  .logs-grid,
+  .settings-grid,
+  .qso-grid,
+  .lookup-grid,
+  .entries-header,
+  .entries-row,
+  .spot-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-header,
+  .panel-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-main {
+    padding: 0.85rem;
+  }
+}

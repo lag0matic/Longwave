@@ -1,0 +1,17 @@
+{
+  "name": "Longwave",
+  "short_name": "Longwave",
+  "description": "Offline-capable ham radio logging for POTA activations and hunting.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05111f",
+  "theme_color": "#f6c54d",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
