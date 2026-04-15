@@ -1,4 +1,5 @@
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
+import type { LatLngExpression } from 'leaflet'
 import type { ContactPin } from '../types'
 
 type ContactMapProps = {
@@ -6,9 +7,8 @@ type ContactMapProps = {
 }
 
 export function ContactMap({ pins }: ContactMapProps) {
-  const center: [number, number] = pins.length > 0
-    ? [pins[0].lat, pins[0].lon]
-    : [20, 0]
+  const firstPin = pins.at(0)
+  const center: LatLngExpression = firstPin ? [firstPin.lat, firstPin.lon] : [20, 0]
 
   return (
     <div className="map-card">
@@ -28,7 +28,7 @@ export function ContactMap({ pins }: ContactMapProps) {
         {pins.map((pin) => (
           <CircleMarker
             key={pin.id}
-            center={[pin.lat, pin.lon]}
+            center={[pin.lat, pin.lon] as LatLngExpression}
             pathOptions={{ color: '#58a9ef', fillColor: '#58a9ef', fillOpacity: 0.7 }}
             radius={7}
           >
