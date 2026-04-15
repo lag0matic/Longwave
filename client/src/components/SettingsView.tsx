@@ -5,6 +5,7 @@ type SettingsViewProps = {
   connection: ClientConnectionSettings
   connectionDraft: ClientConnectionSettings
   setConnectionDraft: Dispatch<SetStateAction<ClientConnectionSettings>>
+  handleSaveLocalConnection: () => void
   rigConnection: RigConnectionSettings
   setRigConnection: Dispatch<SetStateAction<RigConnectionSettings>>
   settingsForm: ServerSettingsForm
@@ -23,9 +24,8 @@ type SettingsViewProps = {
 export function SettingsView(props: SettingsViewProps) {
   function handleSaveLocal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    window.localStorage.setItem('longwave-server-connection', JSON.stringify(props.connectionDraft))
+    props.handleSaveLocalConnection()
     window.localStorage.setItem('longwave-rig-connection', JSON.stringify(props.rigConnection))
-    props.setStatusMessage('Saved local desktop settings.')
   }
 
   return (

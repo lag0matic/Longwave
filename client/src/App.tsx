@@ -187,7 +187,7 @@ function App() {
         <div className="status-banner">{statusMessage}</div>
         {mainTab === 'logs' ? <LogsView {...{ connection, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
         {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
-        {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, setConnectionDraft, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
+        {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
     </div>
   )
@@ -240,6 +240,12 @@ function App() {
     } finally {
       setBusy(null)
     }
+  }
+
+  function handleSaveLocalConnection() {
+    setConnection(connectionDraft)
+    window.localStorage.setItem(connectionStorageKey, JSON.stringify(connectionDraft))
+    setStatusMessage('Saved local desktop settings.')
   }
 
   async function refreshCurrentLogContacts(logbookId: string) {
