@@ -261,7 +261,13 @@ function App() {
         qrz_api_key: settingsForm.qrzApiKey || undefined,
         pota_api_key: settingsForm.potaApiKey || undefined,
       })
+      const [nextOperator, nextLogbooks] = await Promise.all([
+        fetchOperatorProfile(connection),
+        fetchLogbooks(connection),
+      ])
       setAppSettings(updated)
+      setOperator(nextOperator)
+      setLogbooks(nextLogbooks)
       setSettingsForm((current) => ({ ...current, qrzPassword: '', qrzApiKey: '', potaApiKey: '' }))
       setStatusMessage(`Saved settings for ${updated.stationCallsign}.`)
     } catch (error) {
