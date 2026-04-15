@@ -18,6 +18,7 @@ import {
   fetchOperatorProfile,
   fetchPotaSpots,
   importLogbookAdif,
+  probeServerCertificate,
   lookupCallsign,
   uploadLogbookToQrz,
   updateAppSettings,
@@ -56,7 +57,7 @@ export type NewLogbookForm = {
   activationDate: string
 }
 
-export const defaultConnection: ClientConnectionSettings = { serverUrl: 'http://127.0.0.1:8000/api/v1', apiToken: '', adminToken: '' }
+export const defaultConnection: ClientConnectionSettings = { serverUrl: 'http://127.0.0.1:8000/api/v1', additionalServerUrls: '', apiToken: '', adminToken: '', pinnedFingerprint: '' }
 export const defaultRigConnection: RigConnectionSettings = { endpoint: 'http://127.0.0.1:12345' }
 export const defaultNewLogbook: NewLogbookForm = { name: '', kind: 'standard', potaMode: 'hunting', parkReference: '', activationDate: '' }
 
@@ -105,8 +106,8 @@ function App() {
   const lastAutoLookupRef = useRef('')
   const [mainTab, setMainTab] = useState<MainTab>('logs')
   const [logbookTab, setLogbookTab] = useState<LogbookSubTab>('qsos')
-  const [connection, setConnection] = useState<ClientConnectionSettings>(() => loadStored(connectionStorageKey, defaultConnection))
-  const [connectionDraft, setConnectionDraft] = useState<ClientConnectionSettings>(() => loadStored(connectionStorageKey, defaultConnection))
+  const [connection, setConnection] = useState<ClientConnectionSettings>(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }))
+  const [connectionDraft, setConnectionDraft] = useState<ClientConnectionSettings>(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }))
   const [rigConnection, setRigConnection] = useState<RigConnectionSettings>(() => loadStored(rigStorageKey, defaultRigConnection))
   const [operator, setOperator] = useState<OperatorProfile | null>(null)
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
@@ -186,7 +187,7 @@ function App() {
         <div className="status-banner">{statusMessage}</div>
         {mainTab === 'logs' ? <LogsView {...{ connection, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
         {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
-        {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, setConnectionDraft, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, handleReadRig, rigState }} /> : null}
+        {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, setConnectionDraft, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
     </div>
   )
@@ -218,6 +219,24 @@ function App() {
       setStatusMessage(`Connected to ${targetConnection.serverUrl} as ${nextOperator.callsign}.`)
     } catch (error) {
       setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleTrustServer() {
+    setBusy('Trusting Server')
+    try {
+      const result = await probeServerCertificate(connectionDraft)
+      const updatedConnection = {
+        ...connectionDraft,
+        pinnedFingerprint: result.fingerprint,
+      }
+      setConnectionDraft(updatedConnection)
+      window.localStorage.setItem(connectionStorageKey, JSON.stringify(updatedConnection))
+      setStatusMessage(`Trusted server certificate from ${result.endpoint}.`)
+    } catch (error) {
+      setStatusMessage(`Server trust failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
     } finally {
       setBusy(null)
     }

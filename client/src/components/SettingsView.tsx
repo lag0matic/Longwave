@@ -15,6 +15,7 @@ type SettingsViewProps = {
   setStatusMessage: Dispatch<SetStateAction<string>>
   refreshServerState: (targetConnection: ClientConnectionSettings) => Promise<void>
   handleSaveSettings: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  handleTrustServer: () => Promise<void>
   handleReadRig: () => Promise<void>
   rigState: RigState | null
 }
@@ -41,8 +42,12 @@ export function SettingsView(props: SettingsViewProps) {
             <p className="eyebrow">Server</p>
           </div>
           <label>
-            <span>Server URL</span>
+            <span>Primary Server URL</span>
             <input value={props.connectionDraft.serverUrl} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, serverUrl: event.target.value }))} />
+          </label>
+          <label>
+            <span>Additional Server URLs</span>
+            <textarea rows={3} value={props.connectionDraft.additionalServerUrls ?? ''} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, additionalServerUrls: event.target.value }))} placeholder="One per line. Example:&#10;https://192.168.4.194/api/v1&#10;https://thearkive.xyz/api/v1" />
           </label>
           <label>
             <span>Client API Token</span>
@@ -51,6 +56,10 @@ export function SettingsView(props: SettingsViewProps) {
           <label>
             <span>Admin Token</span>
             <input value={props.connectionDraft.adminToken ?? ''} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, adminToken: event.target.value }))} placeholder="Falls back to API token until split" />
+          </label>
+          <label>
+            <span>Pinned Server Fingerprint</span>
+            <input value={props.connectionDraft.pinnedFingerprint ?? ''} readOnly placeholder="Trust a server to pin its identity here" />
           </label>
           <div className="settings-group">
             <p className="eyebrow">FLrig / ShackStack</p>
@@ -62,6 +71,9 @@ export function SettingsView(props: SettingsViewProps) {
           </label>
           <div className="inline-actions">
             <button type="submit">Save Local Settings</button>
+            <button type="button" onClick={() => void props.handleTrustServer()} disabled={props.busy === 'Trusting Server'}>
+              {props.busy === 'Trusting Server' ? 'Trusting...' : 'Trust Server'}
+            </button>
             <button className="primary" type="button" onClick={() => void props.refreshServerState(props.connectionDraft)} disabled={props.busy === 'Connecting'}>
               {props.busy === 'Connecting' ? 'Connecting...' : 'Test Server'}
             </button>

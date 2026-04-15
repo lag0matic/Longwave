@@ -10,6 +10,7 @@ import type {
   PotaSpotDraft,
   Spot,
 } from '../types'
+import { canUseDesktopApi, desktopApiRequest, probeServerCertificate as desktopProbeServerCertificate } from './desktopApi'
 
 type RawLogbook = {
   id: string
@@ -129,7 +130,37 @@ function normalizeServerUrl(serverUrl: string) {
   return serverUrl.replace(/\/+$/, '')
 }
 
+function listServerEndpoints(connection: ClientConnectionSettings) {
+  return [
+    connection.serverUrl,
+    ...(connection.additionalServerUrls ?? '')
+      .split(/\r?\n|,/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ].map(normalizeServerUrl)
+}
+
 async function requestJson<T>(connection: ClientConnectionSettings, path: string, init?: RequestInit): Promise<T> {
+  if (canUseDesktopApi()) {
+    const response = await desktopApiRequest({
+      endpoints: listServerEndpoints(connection),
+      method: init?.method ?? 'GET',
+      path,
+      headers: Object.entries({
+        ...buildHeaders(connection),
+        ...(init?.headers ?? {}),
+      }).map(([name, value]) => ({ name, value: String(value) })),
+      body: typeof init?.body === 'string' ? init.body : undefined,
+      pinnedFingerprint: connection.pinnedFingerprint,
+    })
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(response.body || `Request failed with status ${response.status}`)
+    }
+
+    return JSON.parse(response.body) as T
+  }
+
   const response = await fetch(`${normalizeServerUrl(connection.serverUrl)}${path}`, {
     ...init,
     headers: {
@@ -147,6 +178,26 @@ async function requestJson<T>(connection: ClientConnectionSettings, path: string
 }
 
 async function requestAdminJson<T>(connection: ClientConnectionSettings, path: string, init?: RequestInit): Promise<T> {
+  if (canUseDesktopApi()) {
+    const response = await desktopApiRequest({
+      endpoints: listServerEndpoints(connection),
+      method: init?.method ?? 'GET',
+      path,
+      headers: Object.entries({
+        ...buildAdminHeaders(connection),
+        ...(init?.headers ?? {}),
+      }).map(([name, value]) => ({ name, value: String(value) })),
+      body: typeof init?.body === 'string' ? init.body : undefined,
+      pinnedFingerprint: connection.pinnedFingerprint,
+    })
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(response.body || `Request failed with status ${response.status}`)
+    }
+
+    return JSON.parse(response.body) as T
+  }
+
   const response = await fetch(`${normalizeServerUrl(connection.serverUrl)}${path}`, {
     ...init,
     headers: {
@@ -161,6 +212,11 @@ async function requestAdminJson<T>(connection: ClientConnectionSettings, path: s
   }
 
   return (await response.json()) as T
+}
+
+export async function probeServerCertificate(connection: ClientConnectionSettings): Promise<{ endpoint: string; fingerprint: string }> {
+  const primaryEndpoint = normalizeServerUrl(connection.serverUrl)
+  return desktopProbeServerCertificate(primaryEndpoint)
 }
 
 export async function fetchOperatorProfile(connection: ClientConnectionSettings): Promise<OperatorProfile> {
@@ -262,6 +318,21 @@ export async function deleteLogbook(
   connection: ClientConnectionSettings,
   logbookId: string,
 ): Promise<void> {
+  if (canUseDesktopApi()) {
+    const response = await desktopApiRequest({
+      endpoints: listServerEndpoints(connection),
+      method: 'DELETE',
+      path: `/logbooks/${encodeURIComponent(logbookId)}`,
+      headers: [{ name: 'X-Api-Key', value: connection.apiToken }],
+      pinnedFingerprint: connection.pinnedFingerprint,
+    })
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(response.body || `Request failed with status ${response.status}`)
+    }
+    return
+  }
+
   const response = await fetch(`${normalizeServerUrl(connection.serverUrl)}/logbooks/${encodeURIComponent(logbookId)}`, {
     method: 'DELETE',
     headers: {
@@ -350,6 +421,21 @@ export async function deleteContact(
   connection: ClientConnectionSettings,
   contactId: string,
 ): Promise<void> {
+  if (canUseDesktopApi()) {
+    const response = await desktopApiRequest({
+      endpoints: listServerEndpoints(connection),
+      method: 'DELETE',
+      path: `/contacts/${encodeURIComponent(contactId)}`,
+      headers: [{ name: 'X-Api-Key', value: connection.apiToken }],
+      pinnedFingerprint: connection.pinnedFingerprint,
+    })
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(response.body || `Request failed with status ${response.status}`)
+    }
+    return
+  }
+
   const response = await fetch(`${normalizeServerUrl(connection.serverUrl)}/contacts/${encodeURIComponent(contactId)}`, {
     method: 'DELETE',
     headers: {
@@ -466,6 +552,10 @@ export async function importLogbookAdif(
   operatorCallsign: string,
   file: File,
 ): Promise<{ importedCount: number }> {
+  if (canUseDesktopApi()) {
+    throw new Error('ADIF import still uses browser upload flow. Use the browser preview for now.')
+  }
+
   const formData = new FormData()
   formData.append('file', file)
 

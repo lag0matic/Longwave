@@ -159,8 +159,10 @@ export type ServerSettingsForm = {
 
 export type ClientConnectionSettings = {
   serverUrl: string
+  additionalServerUrls?: string
   apiToken: string
   adminToken?: string
+  pinnedFingerprint?: string
 }
 
 export type RigConnectionSettings = {
