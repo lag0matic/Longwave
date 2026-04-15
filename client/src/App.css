@@ -160,6 +160,65 @@
   margin-top: 0.15rem;
 }
 
+.wizard-panel {
+  grid-column: 1 / -1;
+}
+
+.wizard-step-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.wizard-step {
+  width: 100%;
+  min-height: 0;
+  display: grid;
+  gap: 0.2rem;
+  justify-items: start;
+  text-align: left;
+  background: #131b2d;
+  border-color: rgba(75, 88, 122, 0.46);
+}
+
+.wizard-step.active {
+  border-color: #5f87d5;
+  background: #182238;
+}
+
+.wizard-step.complete {
+  border-color: rgba(38, 180, 118, 0.7);
+}
+
+.wizard-step strong {
+  color: #eef4ff;
+}
+
+.wizard-step span {
+  color: #8ea5d8;
+  font-size: 0.82rem;
+}
+
+.wizard-card {
+  border: 1px solid rgba(72, 91, 130, 0.5);
+  border-radius: 0.6rem;
+  background: #162033;
+  padding: 1rem;
+}
+
+.wizard-card h3 {
+  margin: 0.2rem 0 0.35rem;
+  color: #eef4ff;
+  font-size: 1.1rem;
+}
+
+.wizard-body {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
 .settings-form label,
 .qso-grid label {
   display: grid;
@@ -503,7 +562,8 @@ button:disabled {
   .lookup-grid,
   .entries-header,
   .entries-row,
-  .spot-controls {
+  .spot-controls,
+  .wizard-step-list {
     grid-template-columns: 1fr;
   }
 }
