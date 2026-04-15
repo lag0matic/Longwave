@@ -101,6 +101,16 @@ export function readLogbookMeta(logbook: Logbook) {
   return { kind, potaMode }
 }
 
+function sameConnection(a: ClientConnectionSettings, b: ClientConnectionSettings) {
+  return (
+    a.serverUrl === b.serverUrl &&
+    (a.additionalServerUrls ?? '') === (b.additionalServerUrls ?? '') &&
+    a.apiToken === b.apiToken &&
+    (a.adminToken ?? '') === (b.adminToken ?? '') &&
+    (a.pinnedFingerprint ?? '') === (b.pinnedFingerprint ?? '')
+  )
+}
+
 function App() {
   const desktopRuntime = isDesktopRuntime()
   const lastAutoLookupRef = useRef('')
@@ -256,7 +266,13 @@ function App() {
     event.preventDefault()
     setBusy('Saving Settings')
     try {
-      const updated = await updateAppSettings(connection, {
+      const targetConnection = connectionDraft
+      if (!sameConnection(connection, targetConnection)) {
+        setConnection(targetConnection)
+        window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
+      }
+
+      const updated = await updateAppSettings(targetConnection, {
         station_callsign: settingsForm.stationCallsign,
         station_name: settingsForm.stationName,
         my_grid_square: settingsForm.myGridSquare,
@@ -268,8 +284,8 @@ function App() {
         pota_api_key: settingsForm.potaApiKey || undefined,
       })
       const [nextOperator, nextLogbooks] = await Promise.all([
-        fetchOperatorProfile(connection),
-        fetchLogbooks(connection),
+        fetchOperatorProfile(targetConnection),
+        fetchLogbooks(targetConnection),
       ])
       setAppSettings(updated)
       setOperator(nextOperator)

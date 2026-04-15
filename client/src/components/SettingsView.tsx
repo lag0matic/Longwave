@@ -22,6 +22,11 @@ type SettingsViewProps = {
 }
 
 export function SettingsView(props: SettingsViewProps) {
+  const additionalEndpoints = (props.connectionDraft.additionalServerUrls ?? '')
+    .split(/\r?\n|,/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+
   function handleSaveLocal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     props.handleSaveLocalConnection()
@@ -40,15 +45,22 @@ export function SettingsView(props: SettingsViewProps) {
         <form className="settings-form" onSubmit={handleSaveLocal}>
           <div className="settings-group">
             <p className="eyebrow">Server</p>
+            <p className="muted">Use one server profile with a preferred endpoint and any number of fallbacks. Longwave will trust the pinned server identity rather than the hostname.</p>
           </div>
           <label>
             <span>Primary Server URL</span>
-            <input value={props.connectionDraft.serverUrl} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, serverUrl: event.target.value }))} />
+            <input value={props.connectionDraft.serverUrl} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, serverUrl: event.target.value }))} placeholder="Example: https://192.168.4.194/api/v1" />
           </label>
           <label>
-            <span>Additional Server URLs</span>
-            <textarea rows={3} value={props.connectionDraft.additionalServerUrls ?? ''} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, additionalServerUrls: event.target.value }))} placeholder="One per line. Example:&#10;https://192.168.4.194/api/v1&#10;https://thearkive.xyz/api/v1" />
+            <span>Fallback Server URLs</span>
+            <textarea rows={3} value={props.connectionDraft.additionalServerUrls ?? ''} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, additionalServerUrls: event.target.value }))} placeholder={'One per line.\nExample:\nhttps://thearkive.xyz/api/v1'} />
           </label>
+          <div className="settings-summary endpoint-preview">
+            <span className="pill">{props.connectionDraft.serverUrl || 'No primary endpoint yet'}</span>
+            {additionalEndpoints.map((endpoint) => (
+              <span className="pill" key={endpoint}>{endpoint}</span>
+            ))}
+          </div>
           <label>
             <span>Client API Token</span>
             <input value={props.connectionDraft.apiToken} onChange={(event) => props.setConnectionDraft((current) => ({ ...current, apiToken: event.target.value }))} />
@@ -141,7 +153,11 @@ export function SettingsView(props: SettingsViewProps) {
         </div>
         <div className="settings-summary">
           <span className="pill">{props.connection.serverUrl}</span>
+          {(props.connection.additionalServerUrls ?? '').split(/\r?\n|,/).map((value) => value.trim()).filter(Boolean).map((endpoint) => (
+            <span className="pill" key={endpoint}>{endpoint}</span>
+          ))}
           <span className="pill">{props.appSettings?.adminAccess ? 'Admin ready' : 'Client-only access'}</span>
+          <span className="pill">{props.connection.pinnedFingerprint ? 'Pinned trust ready' : 'Server not trusted yet'}</span>
           <span className="pill">{props.appSettings?.qrzConfigured ? 'QRZ ready' : 'QRZ not ready'}</span>
           <span className="pill">{props.appSettings?.potaConfigured ? 'POTA ready' : 'POTA not ready'}</span>
           <span className="pill">{props.rigState?.radioName ?? props.rigConnection.endpoint}</span>
