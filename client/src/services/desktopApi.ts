@@ -17,6 +17,11 @@ type ServerCertificateInfo = {
   fingerprint: string
 }
 
+type DesktopImportAdifResponse = {
+  importedCount: number
+  endpoint: string
+}
+
 export function canUseDesktopApi() {
   return isDesktopRuntime()
 }
@@ -37,4 +42,16 @@ export async function probeServerCertificate(endpoint: string): Promise<ServerCe
     throw new Error('Certificate probing is only available in the desktop app.')
   }
   return invoke<ServerCertificateInfo>('probe_server_certificate', { endpoint })
+}
+
+export async function desktopImportAdif(input: {
+  endpoints: string[]
+  logbookId: string
+  operatorCallsign: string
+  filename: string
+  adifText: string
+  apiToken: string
+  pinnedFingerprint?: string
+}): Promise<DesktopImportAdifResponse> {
+  return invoke<DesktopImportAdifResponse>('desktop_import_adif', input)
 }

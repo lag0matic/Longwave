@@ -10,7 +10,12 @@ import type {
   PotaSpotDraft,
   Spot,
 } from '../types'
-import { canUseDesktopApi, desktopApiRequest, probeServerCertificate as desktopProbeServerCertificate } from './desktopApi'
+import {
+  canUseDesktopApi,
+  desktopApiRequest,
+  desktopImportAdif,
+  probeServerCertificate as desktopProbeServerCertificate,
+} from './desktopApi'
 
 type RawLogbook = {
   id: string
@@ -33,7 +38,6 @@ type RawSettings = {
   admin_access: boolean
   qrz_username?: string | null
   qrz_configured: boolean
-  pota_configured: boolean
 }
 
 type RawAdifExport = {
@@ -236,7 +240,6 @@ export async function fetchAppSettings(connection: ClientConnectionSettings): Pr
     adminAccess: raw.admin_access,
     qrzUsername: raw.qrz_username ?? undefined,
     qrzConfigured: raw.qrz_configured,
-    potaConfigured: raw.pota_configured,
   }
 }
 
@@ -251,7 +254,6 @@ export async function updateAppSettings(
     qrz_username: string
     qrz_password: string
     qrz_api_key: string
-    pota_api_key: string
   }>,
 ): Promise<AppSettings> {
   const raw = await requestAdminJson<RawSettings>(connection, '/settings', {
@@ -269,7 +271,6 @@ export async function updateAppSettings(
     adminAccess: raw.admin_access,
     qrzUsername: raw.qrz_username ?? undefined,
     qrzConfigured: raw.qrz_configured,
-    potaConfigured: raw.pota_configured,
   }
 }
 
@@ -553,7 +554,17 @@ export async function importLogbookAdif(
   file: File,
 ): Promise<{ importedCount: number }> {
   if (canUseDesktopApi()) {
-    throw new Error('ADIF import still uses browser upload flow. Use the browser preview for now.')
+    const adifText = await file.text()
+    const result = await desktopImportAdif({
+      endpoints: listServerEndpoints(connection),
+      logbookId,
+      operatorCallsign,
+      filename: file.name,
+      adifText,
+      apiToken: connection.apiToken,
+      pinnedFingerprint: connection.pinnedFingerprint,
+    })
+    return { importedCount: result.importedCount }
   }
 
   const formData = new FormData()

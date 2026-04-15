@@ -142,7 +142,6 @@ export type AppSettings = {
   adminAccess: boolean
   qrzUsername?: string
   qrzConfigured: boolean
-  potaConfigured: boolean
 }
 
 export type ServerSettingsForm = {
@@ -154,7 +153,6 @@ export type ServerSettingsForm = {
   qrzUsername: string
   qrzPassword: string
   qrzApiKey: string
-  potaApiKey: string
 }
 
 export type ClientConnectionSettings = {

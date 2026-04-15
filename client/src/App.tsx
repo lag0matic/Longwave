@@ -4,7 +4,7 @@ import './App.css'
 import { LogsView } from './components/LogsView'
 import { CurrentLogView } from './components/CurrentLogView'
 import { SettingsView } from './components/SettingsView'
-import { draftFromSpot, spots as fallbackSpots } from './data/mockData'
+import { spots as fallbackSpots } from './data/mockData'
 import {
   createContact,
   createLogbook,
@@ -101,6 +101,40 @@ export function readLogbookMeta(logbook: Logbook) {
   return { kind, potaMode }
 }
 
+function utcStampParts() {
+  const now = new Date()
+  const qsoDate = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`
+  const timeOn = `${String(now.getUTCHours()).padStart(2, '0')}${String(now.getUTCMinutes()).padStart(2, '0')}`
+  return { qsoDate, timeOn }
+}
+
+function createEmptyDraft(operatorCallsign = 'N0CALL', logbookId = ''): ContactDraft {
+  const { qsoDate, timeOn } = utcStampParts()
+  return {
+    stationCallsign: '',
+    operatorCallsign,
+    logbookId,
+    qsoDate,
+    timeOn,
+    mode: 'SSB',
+    frequencyKhz: 14250,
+    band: bandFromFrequencyKhz(14250),
+    rstSent: '59',
+    rstRcvd: '59',
+    txPower: '',
+    name: undefined,
+    qth: undefined,
+    county: undefined,
+    parkReference: undefined,
+    gridSquare: undefined,
+    country: undefined,
+    state: undefined,
+    dxcc: undefined,
+    lat: undefined,
+    lon: undefined,
+  }
+}
+
 function sameConnection(a: ClientConnectionSettings, b: ClientConnectionSettings) {
   return (
     a.serverUrl === b.serverUrl &&
@@ -126,13 +160,13 @@ function App() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [spots, setSpots] = useState<Spot[]>(fallbackSpots)
   const [selectedSpot, setSelectedSpot] = useState<Spot>(fallbackSpots[0])
-  const [draft, setDraft] = useState<ContactDraft>(() => draftFromSpot(fallbackSpots[0]))
+  const [draft, setDraft] = useState<ContactDraft>(() => createEmptyDraft())
   const [lookupResult, setLookupResult] = useState<CallsignLookup | null>(null)
   const [rigState, setRigState] = useState<RigState | null>(null)
   const [queuedSyncItems, setQueuedSyncItems] = useState<PendingMutation[]>(() => loadStored(queueStorageKey, []))
   const [statusMessage, setStatusMessage] = useState('Connect to your server and choose a logbook to begin.')
   const [busy, setBusy] = useState<string | null>(null)
-  const [settingsForm, setSettingsForm] = useState<ServerSettingsForm>({ stationCallsign: '', stationName: '', myGridSquare: '', myState: '', myCounty: '', qrzUsername: '', qrzPassword: '', qrzApiKey: '', potaApiKey: '' })
+  const [settingsForm, setSettingsForm] = useState<ServerSettingsForm>({ stationCallsign: '', stationName: '', myGridSquare: '', myState: '', myCounty: '', qrzUsername: '', qrzPassword: '', qrzApiKey: '' })
 
   const currentLogbook = useMemo(() => logbooks.find((logbook) => logbook.id === currentLogbookId) ?? null, [logbooks, currentLogbookId])
 
@@ -143,17 +177,25 @@ function App() {
   useEffect(() => {
     const preferredOperator = currentLogbook?.operatorCallsign || operator?.callsign || appSettings?.stationCallsign
     if (!preferredOperator) return
+    const logbookMeta = currentLogbook ? readLogbookMeta(currentLogbook) : null
     setDraft((current) => {
-      if (current.operatorCallsign === preferredOperator && current.logbookId === (currentLogbookId ?? current.logbookId)) {
+      const nextLogbookId = currentLogbookId ?? current.logbookId
+      const nextParkReference = logbookMeta?.kind === 'pota' ? current.parkReference : undefined
+      if (
+        current.operatorCallsign === preferredOperator
+        && current.logbookId === nextLogbookId
+        && current.parkReference === nextParkReference
+      ) {
         return current
       }
       return {
         ...current,
         operatorCallsign: preferredOperator,
-        logbookId: currentLogbookId ?? current.logbookId,
+        logbookId: nextLogbookId,
+        parkReference: nextParkReference,
       }
     })
-  }, [currentLogbook?.operatorCallsign, currentLogbookId, operator?.callsign, appSettings?.stationCallsign])
+  }, [currentLogbook, currentLogbookId, operator?.callsign, appSettings?.stationCallsign])
   useEffect(() => {
     if (!currentLogbookId || !connection.apiToken) return
     void refreshCurrentLogContacts(currentLogbookId)
@@ -285,7 +327,6 @@ function App() {
         qrz_username: settingsForm.qrzUsername,
         qrz_password: settingsForm.qrzPassword || undefined,
         qrz_api_key: settingsForm.qrzApiKey || undefined,
-        pota_api_key: settingsForm.potaApiKey || undefined,
       })
       const [nextOperator, nextLogbooks] = await Promise.all([
         fetchOperatorProfile(targetConnection),
@@ -294,7 +335,7 @@ function App() {
       setAppSettings(updated)
       setOperator(nextOperator)
       setLogbooks(nextLogbooks)
-      setSettingsForm((current) => ({ ...current, qrzPassword: '', qrzApiKey: '', potaApiKey: '' }))
+      setSettingsForm((current) => ({ ...current, qrzPassword: '', qrzApiKey: '' }))
       setStatusMessage(`Saved settings for ${updated.stationCallsign}.`)
     } catch (error) {
       setStatusMessage(`Settings save failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
@@ -337,10 +378,21 @@ function App() {
     if (!currentLogbookId) return
     setBusy('Saving QSO')
     try {
-      await createContact(connection, { ...draft, logbookId: currentLogbookId, band: bandFromFrequencyKhz(draft.frequencyKhz) || draft.band })
+      const currentMeta = currentLogbook ? readLogbookMeta(currentLogbook) : null
+      await createContact(connection, {
+        ...draft,
+        logbookId: currentLogbookId,
+        band: bandFromFrequencyKhz(draft.frequencyKhz) || draft.band,
+        parkReference: currentMeta?.kind === 'pota' ? draft.parkReference : undefined,
+      })
       await refreshCurrentLogContacts(currentLogbookId)
       setLogbooks(await fetchLogbooks(connection))
-      setDraft((current) => ({ ...current, stationCallsign: '', rstSent: '59', rstRcvd: '59', name: undefined, qth: undefined, county: undefined, gridSquare: undefined, country: undefined, state: undefined, dxcc: undefined, lat: undefined, lon: undefined }))
+      const nextMeta = currentLogbook ? readLogbookMeta(currentLogbook) : null
+      setDraft((current) => ({
+        ...createEmptyDraft(current.operatorCallsign, currentLogbookId),
+        txPower: current.txPower,
+        parkReference: nextMeta?.kind === 'pota' ? current.parkReference : undefined,
+      }))
       setLookupResult(null)
       lastAutoLookupRef.current = ''
       setStatusMessage('Saved QSO.')

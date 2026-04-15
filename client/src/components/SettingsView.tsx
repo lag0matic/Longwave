@@ -241,7 +241,7 @@ export function SettingsView(props: SettingsViewProps) {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Server Settings</p>
-            <h2>QRZ, station identity, and POTA</h2>
+            <h2>QRZ and station identity</h2>
           </div>
         </div>
         <form className="settings-form" onSubmit={(event) => void props.handleSaveSettings(event)}>
@@ -277,10 +277,6 @@ export function SettingsView(props: SettingsViewProps) {
             <span>QRZ Logbook API Key</span>
             <input value={props.settingsForm.qrzApiKey} onChange={(event) => props.setSettingsForm((current) => ({ ...current, qrzApiKey: event.target.value }))} placeholder="Enter to update" />
           </label>
-          <label>
-            <span>POTA API Key</span>
-            <input value={props.settingsForm.potaApiKey} onChange={(event) => props.setSettingsForm((current) => ({ ...current, potaApiKey: event.target.value }))} placeholder="Enter to update" />
-          </label>
           <button className="primary" type="submit">Save Server Settings</button>
         </form>
       </section>
@@ -300,7 +296,7 @@ export function SettingsView(props: SettingsViewProps) {
           <span className="pill">{props.appSettings?.adminAccess ? 'Admin ready' : 'Client-only access'}</span>
           <span className="pill">{props.connection.pinnedFingerprint ? 'Pinned trust ready' : 'Server not trusted yet'}</span>
           <span className="pill">{props.appSettings?.qrzConfigured ? 'QRZ ready' : 'QRZ not ready'}</span>
-          <span className="pill">{props.appSettings?.potaConfigured ? 'POTA ready' : 'POTA not ready'}</span>
+          <span className="pill">POTA spotting built in</span>
           <span className="pill">{props.rigState?.radioName ?? props.rigConnection.endpoint}</span>
         </div>
       </section>

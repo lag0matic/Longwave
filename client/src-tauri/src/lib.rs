@@ -37,6 +37,13 @@ struct ServerCertificateInfo {
   fingerprint: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopImportAdifResponse {
+  imported_count: usize,
+  endpoint: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ApiHeader {
@@ -273,6 +280,80 @@ async fn send_api_request(
   })
 }
 
+async fn send_adif_import_request(
+  endpoint: &str,
+  logbook_id: &str,
+  operator_callsign: &str,
+  filename: &str,
+  adif_text: &str,
+  api_token: &str,
+  pinned_fingerprint: Option<&str>,
+) -> Result<DesktopImportAdifResponse, String> {
+  let path = format!(
+    "/logs/import?logbook_id={}&operator_callsign={}",
+    urlencoding::encode(logbook_id),
+    urlencoding::encode(operator_callsign)
+  );
+  let url = join_url(endpoint, &path)?;
+  let parsed = Url::parse(endpoint).map_err(|error| error.to_string())?;
+
+  if parsed.scheme() == "https" {
+    let fingerprint = fetch_server_fingerprint(endpoint)?;
+    match pinned_fingerprint.map(str::trim).filter(|value| !value.is_empty()) {
+      Some(expected) if !fingerprint.eq_ignore_ascii_case(expected) => {
+        return Err(format!(
+          "Pinned server fingerprint mismatch at {endpoint}. Expected {expected}, got {fingerprint}."
+        ))
+      }
+      None => {
+        return Err(format!(
+          "Untrusted server certificate at {endpoint}. Fingerprint: {fingerprint}"
+        ))
+      }
+      _ => {}
+    }
+  }
+
+  let mut builder = Client::builder().timeout(Duration::from_secs(60));
+  if parsed.scheme() == "https" {
+    builder = builder
+      .danger_accept_invalid_certs(true)
+      .danger_accept_invalid_hostnames(true);
+  }
+
+  let client = builder.build().map_err(|error| error.to_string())?;
+  let part = reqwest::multipart::Part::text(adif_text.to_string())
+    .file_name(filename.to_string())
+    .mime_str("text/plain")
+    .map_err(|error| error.to_string())?;
+  let form = reqwest::multipart::Form::new().part("file", part);
+
+  let response = client
+    .post(url)
+    .header("X-Api-Key", api_token)
+    .multipart(form)
+    .send()
+    .await
+    .map_err(|error| error.to_string())?;
+
+  let status = response.status();
+  let body = response.text().await.map_err(|error| error.to_string())?;
+  if !status.is_success() {
+    return Err(body);
+  }
+
+  #[derive(Deserialize)]
+  struct RawImportResponse {
+    imported_contacts: Vec<serde_json::Value>,
+  }
+
+  let parsed_body: RawImportResponse = serde_json::from_str(&body).map_err(|error| error.to_string())?;
+  Ok(DesktopImportAdifResponse {
+    imported_count: parsed_body.imported_contacts.len(),
+    endpoint: endpoint.to_string(),
+  })
+}
+
 #[tauri::command]
 async fn desktop_api_request(
   endpoints: Vec<String>,
@@ -318,6 +399,47 @@ async fn probe_server_certificate(endpoint: String) -> Result<ServerCertificateI
     fingerprint: fetch_server_fingerprint(&endpoint)?,
     endpoint,
   })
+}
+
+#[tauri::command]
+async fn desktop_import_adif(
+  endpoints: Vec<String>,
+  logbook_id: String,
+  operator_callsign: String,
+  filename: String,
+  adif_text: String,
+  api_token: String,
+  pinned_fingerprint: Option<String>,
+) -> Result<DesktopImportAdifResponse, String> {
+  let candidates = endpoints
+    .into_iter()
+    .map(|endpoint| endpoint.trim().to_string())
+    .filter(|endpoint| !endpoint.is_empty())
+    .collect::<Vec<_>>();
+
+  if candidates.is_empty() {
+    return Err("No server endpoints configured.".to_string());
+  }
+
+  let mut last_error = None;
+  for endpoint in candidates {
+    match send_adif_import_request(
+      &endpoint,
+      &logbook_id,
+      &operator_callsign,
+      &filename,
+      &adif_text,
+      &api_token,
+      pinned_fingerprint.as_deref(),
+    )
+    .await
+    {
+      Ok(response) => return Ok(response),
+      Err(error) => last_error = Some(error),
+    }
+  }
+
+  Err(last_error.unwrap_or_else(|| "ADIF import failed.".to_string()))
 }
 
 #[tauri::command]
@@ -386,6 +508,7 @@ pub fn run() {
     .plugin(tauri_plugin_log::Builder::default().build())
     .invoke_handler(tauri::generate_handler![
       desktop_api_request,
+      desktop_import_adif,
       probe_server_certificate,
       read_flrig_state,
       tune_flrig

@@ -145,7 +145,7 @@ export function CurrentLogView(props: CurrentLogViewProps) {
           </div>
           <div className="inline-actions">
             <span className="pill">{meta.kind === 'pota' ? `POTA ${meta.potaMode}` : 'Standard'}</span>
-            <span className="pill">{props.currentLogbook.parkReference ?? 'No park'}</span>
+            {meta.kind === 'pota' ? <span className="pill">{props.currentLogbook.parkReference ?? 'No park'}</span> : null}
             <span className="pill">{props.queuedSyncItems.length} queued</span>
           </div>
         </div>
@@ -224,7 +224,7 @@ export function CurrentLogView(props: CurrentLogViewProps) {
         {props.logbookTab === 'qsos' ? (
           <div className="entries-table">
             <div className="entries-header">
-              <span>Local Time</span><span>Call</span><span>RST</span><span>Mode</span><span>Freq</span><span>Park</span><span>Location</span><span>Action</span>
+              <span>Local Time</span><span>Call</span><span>RST</span><span>Mode</span><span>Freq</span>{meta.kind === 'pota' ? <span>Park</span> : null}<span>Location</span><span>Action</span>
             </div>
             {props.contacts.map((contact) => (
               <div key={contact.id} className="entries-row">
@@ -233,7 +233,7 @@ export function CurrentLogView(props: CurrentLogViewProps) {
                 <span>{contact.rstSent ?? '--'} / {contact.rstRcvd ?? '--'}</span>
                 <span>{contact.mode}</span>
                 <span>{contact.frequencyKhz.toFixed(3)}</span>
-                <span>{contact.parkReference ?? '--'}</span>
+                {meta.kind === 'pota' ? <span>{contact.parkReference ?? '--'}</span> : null}
                 <span>{formatLocation(contact)}</span>
                 <button
                   className="danger"
@@ -309,7 +309,7 @@ export function CurrentLogView(props: CurrentLogViewProps) {
         <div className="inline-actions">
           <span className="pill">{props.lookupResult?.country ?? props.lookupResult?.state ?? 'QRZ idle'}</span>
           <span className="pill">{props.rigState?.radioName ?? props.rigConnection.endpoint}</span>
-          <span className="pill">{props.selectedSpot.parkReference}</span>
+          {meta.kind === 'pota' ? <span className="pill">{props.selectedSpot.parkReference}</span> : null}
         </div>
       </section>
     </>
