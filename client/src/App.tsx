@@ -201,6 +201,54 @@ function App() {
     void refreshCurrentLogContacts(currentLogbookId)
   }, [currentLogbookId, connection.apiToken])
   useEffect(() => {
+    if (!connection.apiToken || !currentLogbookId || mainTab !== 'current') {
+      return
+    }
+
+    const activeLogbookId = currentLogbookId
+    let cancelled = false
+
+    async function refreshOpenLogbookSilently() {
+      if (document.visibilityState === 'hidden') {
+        return
+      }
+
+      try {
+        const [nextContacts, nextLogbooks] = await Promise.all([
+          fetchContacts(connection, activeLogbookId),
+          fetchLogbooks(connection),
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        setContacts(nextContacts)
+        setLogbooks(nextLogbooks)
+      } catch {
+        // Keep polling lightweight and quiet; explicit actions still surface errors.
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshOpenLogbookSilently()
+    }, 10000)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshOpenLogbookSilently()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [connection, currentLogbookId, mainTab])
+  useEffect(() => {
     const normalized = draft.stationCallsign.trim().toUpperCase()
     if (mainTab !== 'current') return
     if (!connection.apiToken) return

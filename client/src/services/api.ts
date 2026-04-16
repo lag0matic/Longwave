@@ -134,14 +134,38 @@ function normalizeServerUrl(serverUrl: string) {
   return serverUrl.replace(/\/+$/, '')
 }
 
-function listServerEndpoints(connection: ClientConnectionSettings) {
+const preferredEndpointByConnection = new Map<string, string>()
+
+function connectionKey(connection: ClientConnectionSettings) {
   return [
+    normalizeServerUrl(connection.serverUrl),
+    ...(connection.additionalServerUrls ?? '')
+      .split(/\r?\n|,/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map(normalizeServerUrl),
+  ].join('|')
+}
+
+function listServerEndpoints(connection: ClientConnectionSettings) {
+  const endpoints = [
     connection.serverUrl,
     ...(connection.additionalServerUrls ?? '')
       .split(/\r?\n|,/)
       .map((value) => value.trim())
       .filter(Boolean),
   ].map(normalizeServerUrl)
+
+  const preferredEndpoint = preferredEndpointByConnection.get(connectionKey(connection))
+  if (preferredEndpoint && endpoints.includes(preferredEndpoint)) {
+    return [preferredEndpoint, ...endpoints.filter((endpoint) => endpoint !== preferredEndpoint)]
+  }
+
+  return endpoints
+}
+
+function rememberSuccessfulEndpoint(connection: ClientConnectionSettings, endpoint: string) {
+  preferredEndpointByConnection.set(connectionKey(connection), normalizeServerUrl(endpoint))
 }
 
 async function requestJson<T>(connection: ClientConnectionSettings, path: string, init?: RequestInit): Promise<T> {
@@ -162,6 +186,7 @@ async function requestJson<T>(connection: ClientConnectionSettings, path: string
       throw new Error(response.body || `Request failed with status ${response.status}`)
     }
 
+    rememberSuccessfulEndpoint(connection, response.endpoint)
     return JSON.parse(response.body) as T
   }
 
@@ -199,6 +224,7 @@ async function requestAdminJson<T>(connection: ClientConnectionSettings, path: s
       throw new Error(response.body || `Request failed with status ${response.status}`)
     }
 
+    rememberSuccessfulEndpoint(connection, response.endpoint)
     return JSON.parse(response.body) as T
   }
 
@@ -219,8 +245,20 @@ async function requestAdminJson<T>(connection: ClientConnectionSettings, path: s
 }
 
 export async function probeServerCertificate(connection: ClientConnectionSettings): Promise<{ endpoint: string; fingerprint: string }> {
-  const primaryEndpoint = normalizeServerUrl(connection.serverUrl)
-  return desktopProbeServerCertificate(primaryEndpoint)
+  const endpoints = listServerEndpoints(connection)
+  let lastError: Error | null = null
+
+  for (const endpoint of endpoints) {
+    try {
+      const result = await desktopProbeServerCertificate(endpoint)
+      rememberSuccessfulEndpoint(connection, result.endpoint)
+      return result
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Certificate probe failed.')
+    }
+  }
+
+  throw lastError ?? new Error('Certificate probe failed.')
 }
 
 export async function fetchOperatorProfile(connection: ClientConnectionSettings): Promise<OperatorProfile> {
@@ -564,6 +602,7 @@ export async function importLogbookAdif(
       apiToken: connection.apiToken,
       pinnedFingerprint: connection.pinnedFingerprint,
     })
+    rememberSuccessfulEndpoint(connection, result.endpoint)
     return { importedCount: result.importedCount }
   }
 
