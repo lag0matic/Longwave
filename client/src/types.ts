@@ -119,6 +119,18 @@ export type PendingMutation =
     }
   | {
       id: string
+      entityType: 'contact'
+      action: 'delete'
+      createdAt: string
+      payloadSummary: string
+      payload: {
+        contactId: string
+        logbookId: string
+        stationCallsign: string
+      }
+    }
+  | {
+      id: string
       entityType: 'spot'
       action: 'create'
       createdAt: string

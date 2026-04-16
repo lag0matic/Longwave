@@ -72,6 +72,26 @@ export function createMutationId() {
   return `mutation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function cacheScope(connection: ClientConnectionSettings) {
+  return connection.serverUrl.replace(/[^a-z0-9]+/gi, '_').toLowerCase()
+}
+
+function logbooksCacheKey(connection: ClientConnectionSettings) {
+  return `longwave-logbooks-cache:${cacheScope(connection)}`
+}
+
+function operatorCacheKey(connection: ClientConnectionSettings) {
+  return `longwave-operator-cache:${cacheScope(connection)}`
+}
+
+function settingsCacheKey(connection: ClientConnectionSettings) {
+  return `longwave-settings-cache:${cacheScope(connection)}`
+}
+
+function contactsCacheKey(connection: ClientConnectionSettings, logbookId: string) {
+  return `longwave-contacts-cache:${cacheScope(connection)}:${logbookId}`
+}
+
 export function bandFromFrequencyKhz(frequencyKhz: number): string {
   if (frequencyKhz >= 1800 && frequencyKhz < 2000) return '160m'
   if (frequencyKhz >= 3500 && frequencyKhz < 4000) return '80m'
@@ -137,6 +157,33 @@ function createEmptyDraft(operatorCallsign = 'N0CALL', logbookId = ''): ContactD
   }
 }
 
+function createQueuedContact(draft: ContactDraft, mutationId: string): Contact {
+  return {
+    id: `queued-${mutationId}`,
+    logbookId: draft.logbookId,
+    stationCallsign: draft.stationCallsign,
+    operatorCallsign: draft.operatorCallsign,
+    qsoDate: draft.qsoDate,
+    timeOn: draft.timeOn,
+    band: bandFromFrequencyKhz(draft.frequencyKhz) || draft.band,
+    mode: draft.mode,
+    frequencyKhz: draft.frequencyKhz,
+    rstSent: draft.rstSent,
+    rstRcvd: draft.rstRcvd,
+    txPower: draft.txPower,
+    name: draft.name,
+    qth: draft.qth,
+    county: draft.county,
+    parkReference: draft.parkReference,
+    gridSquare: draft.gridSquare,
+    country: draft.country,
+    state: draft.state,
+    dxcc: draft.dxcc,
+    lat: draft.lat,
+    lon: draft.lon,
+  }
+}
+
 function sameConnection(a: ClientConnectionSettings, b: ClientConnectionSettings) {
   return (
     a.serverUrl === b.serverUrl &&
@@ -148,17 +195,21 @@ function sameConnection(a: ClientConnectionSettings, b: ClientConnectionSettings
 }
 
 function App() {
+  const initialConnection = { ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }
+  const initialRigConnection = loadStored(rigStorageKey, defaultRigConnection)
   const desktopRuntime = isDesktopRuntime()
   const lastAutoLookupRef = useRef('')
+  const syncInFlightRef = useRef(false)
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [mainTab, setMainTab] = useState<MainTab>('logs')
   const [logbookTab, setLogbookTab] = useState<LogbookSubTab>('qsos')
-  const [connection, setConnection] = useState<ClientConnectionSettings>(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }))
-  const [connectionDraft, setConnectionDraft] = useState<ClientConnectionSettings>(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }))
-  const [activeServerUrl, setActiveServerUrl] = useState(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }.serverUrl))
-  const [rigConnection, setRigConnection] = useState<RigConnectionSettings>(() => loadStored(rigStorageKey, defaultRigConnection))
-  const [operator, setOperator] = useState<OperatorProfile | null>(null)
-  const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
-  const [logbooks, setLogbooks] = useState<Logbook[]>([])
+  const [connection, setConnection] = useState<ClientConnectionSettings>(initialConnection)
+  const [connectionDraft, setConnectionDraft] = useState<ClientConnectionSettings>(initialConnection)
+  const [activeServerUrl, setActiveServerUrl] = useState(initialConnection.serverUrl)
+  const [rigConnection, setRigConnection] = useState<RigConnectionSettings>(initialRigConnection)
+  const [operator, setOperator] = useState<OperatorProfile | null>(() => loadStored(operatorCacheKey(initialConnection), null))
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(() => loadStored(settingsCacheKey(initialConnection), null))
+  const [logbooks, setLogbooks] = useState<Logbook[]>(() => loadStored(logbooksCacheKey(initialConnection), []))
   const [currentLogbookId, setCurrentLogbookId] = useState<string | null>(null)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [spots, setSpots] = useState<Spot[]>(fallbackSpots)
@@ -175,6 +226,23 @@ function App() {
 
   useEffect(() => { window.localStorage.setItem(queueStorageKey, JSON.stringify(queuedSyncItems)) }, [queuedSyncItems])
   useEffect(() => { window.localStorage.setItem(rigStorageKey, JSON.stringify(rigConnection)) }, [rigConnection])
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+  useEffect(() => { window.localStorage.setItem(logbooksCacheKey(connection), JSON.stringify(logbooks)) }, [connection, logbooks])
+  useEffect(() => { window.localStorage.setItem(operatorCacheKey(connection), JSON.stringify(operator)) }, [connection, operator])
+  useEffect(() => { window.localStorage.setItem(settingsCacheKey(connection), JSON.stringify(appSettings)) }, [connection, appSettings])
+  useEffect(() => {
+    if (!currentLogbookId) return
+    window.localStorage.setItem(contactsCacheKey(connection, currentLogbookId), JSON.stringify(contacts))
+  }, [connection, contacts, currentLogbookId])
   useEffect(() => { if (appSettings) setSettingsForm((current) => ({ ...current, stationCallsign: appSettings.stationCallsign, stationName: appSettings.stationName, myGridSquare: appSettings.myGridSquare ?? '', myState: appSettings.myState ?? '', myCounty: appSettings.myCounty ?? '', qrzUsername: appSettings.qrzUsername ?? '' })) }, [appSettings])
   useEffect(() => { if (connection.apiToken) void refreshServerState(connection) }, [])
   useEffect(() => {
@@ -203,6 +271,59 @@ function App() {
     if (!currentLogbookId || !connection.apiToken) return
     void refreshCurrentLogContacts(currentLogbookId)
   }, [currentLogbookId, connection.apiToken])
+  useEffect(() => {
+    if (!currentLogbookId || contacts.length > 0) return
+    const cachedContacts = loadStored<Contact[]>(contactsCacheKey(connection, currentLogbookId), [])
+    if (cachedContacts.length > 0) {
+      setContacts(cachedContacts)
+    }
+  }, [connection, contacts.length, currentLogbookId])
+  useEffect(() => {
+    if (!connection.apiToken || queuedSyncItems.length === 0 || syncInFlightRef.current || !isOnline) {
+      return
+    }
+
+    const queuedMutation = queuedSyncItems[queuedSyncItems.length - 1]
+    syncInFlightRef.current = true
+
+    void (async () => {
+      try {
+        if (queuedMutation.entityType === 'contact' && queuedMutation.action === 'create') {
+          await createContact(connection, queuedMutation.payload)
+          if (currentLogbookId === queuedMutation.payload.logbookId) {
+            await refreshCurrentLogContacts(queuedMutation.payload.logbookId)
+          }
+          setLogbooks(await fetchLogbooks(connection))
+          setQueuedSyncItems((current) => current.filter((item) => item.id !== queuedMutation.id))
+          setStatusMessage(`Synced queued QSO with ${queuedMutation.payload.stationCallsign}.`)
+        } else if (queuedMutation.entityType === 'contact' && queuedMutation.action === 'delete') {
+          await deleteContact(connection, queuedMutation.payload.contactId)
+          if (currentLogbookId === queuedMutation.payload.logbookId) {
+            await refreshCurrentLogContacts(queuedMutation.payload.logbookId)
+          }
+          setLogbooks(await fetchLogbooks(connection))
+          setQueuedSyncItems((current) => current.filter((item) => item.id !== queuedMutation.id))
+          setStatusMessage(`Synced queued delete for ${queuedMutation.payload.stationCallsign}.`)
+        } else if (queuedMutation.entityType === 'spot' && queuedMutation.action === 'create') {
+          await createPotaSpot(connection, queuedMutation.payload)
+          setQueuedSyncItems((current) => current.filter((item) => item.id !== queuedMutation.id))
+          setStatusMessage(`Synced queued spot for ${queuedMutation.payload.activatorCallsign}.`)
+        }
+      } catch (error) {
+        if (!shouldQueueMutation(error)) {
+          setStatusMessage(`Queued sync failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
+        }
+      } finally {
+        syncInFlightRef.current = false
+      }
+    })()
+  }, [connection, currentLogbookId, isOnline, queuedSyncItems])
+  useEffect(() => {
+    if (!isOnline || !connection.apiToken) {
+      return
+    }
+    void refreshServerState(connection)
+  }, [connection.apiToken, isOnline])
   useEffect(() => {
     if (!connection.apiToken || !currentLogbookId || mainTab !== 'current') {
       return
@@ -289,7 +410,7 @@ function App() {
       <main className="app-main">
         <div className="status-banner">{statusMessage}</div>
         {mainTab === 'logs' ? <LogsView {...{ connection, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
-        {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
+        {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, isOnline, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
         {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, activeServerUrl, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, saveServerSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
     </div>
@@ -324,7 +445,21 @@ function App() {
       window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
       setStatusMessage(`Connected to ${activeEndpoint} as ${nextOperator.callsign}.`)
     } catch (error) {
-      setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
+      const cachedOperator = loadStored<OperatorProfile | null>(operatorCacheKey(targetConnection), null)
+      const cachedSettings = loadStored<AppSettings | null>(settingsCacheKey(targetConnection), null)
+      const cachedLogbooks = loadStored<Logbook[]>(logbooksCacheKey(targetConnection), [])
+      if (cachedOperator || cachedSettings || cachedLogbooks.length > 0) {
+        setOperator(cachedOperator)
+        setAppSettings(cachedSettings)
+        setLogbooks(cachedLogbooks)
+        setCurrentLogbookId((current) => current ?? cachedLogbooks[0]?.id ?? null)
+        setConnection(targetConnection)
+        setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
+        window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
+        setStatusMessage(`Offline. Using cached data for ${cachedOperator?.callsign ?? cachedSettings?.stationCallsign ?? 'this server'}.`)
+      } else {
+        setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
+      }
     } finally {
       setBusy(null)
     }
@@ -357,7 +492,17 @@ function App() {
   }
 
   async function refreshCurrentLogContacts(logbookId: string) {
-    setContacts(await fetchContacts(connection, logbookId))
+    try {
+      setContacts(await fetchContacts(connection, logbookId))
+    } catch (error) {
+      const cachedContacts = loadStored<Contact[]>(contactsCacheKey(connection, logbookId), [])
+      setContacts(cachedContacts)
+      if (cachedContacts.length > 0 || shouldQueueMutation(error)) {
+        setStatusMessage(`Offline. Showing cached QSOs for ${currentLogbook?.name ?? 'this logbook'}.`)
+        return
+      }
+      throw error
+    }
   }
 
   async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
@@ -455,7 +600,15 @@ function App() {
       setStatusMessage('Saved QSO.')
     } catch (error) {
       if (shouldQueueMutation(error)) {
-        setQueuedSyncItems((current) => [{ id: createMutationId(), entityType: 'contact', action: 'create', createdAt: new Date().toISOString(), payloadSummary: `Queued QSO with ${draft.stationCallsign}`, payload: { ...draft, logbookId: currentLogbookId } }, ...current])
+        const mutationId = createMutationId()
+        const queuedDraft = { ...draft, logbookId: currentLogbookId }
+        setQueuedSyncItems((current) => [{ id: mutationId, entityType: 'contact', action: 'create', createdAt: new Date().toISOString(), payloadSummary: `Queued QSO with ${draft.stationCallsign}`, payload: queuedDraft }, ...current])
+        setContacts((current) => [createQueuedContact(queuedDraft, mutationId), ...current])
+        setLogbooks((current) => current.map((logbook) => (
+          logbook.id === currentLogbookId
+            ? { ...logbook, contactCount: logbook.contactCount + 1, syncState: 'pending' }
+            : logbook
+        )))
         setStatusMessage(`Queued QSO with ${draft.stationCallsign}.`)
       } else {
         setStatusMessage(`Save failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
@@ -555,7 +708,42 @@ function App() {
       setLogbooks(await fetchLogbooks(connection))
       setStatusMessage(`Deleted QSO with ${contact.stationCallsign}.`)
     } catch (error) {
-      setStatusMessage(`Delete failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
+      if (shouldQueueMutation(error)) {
+        if (contact.id.startsWith('queued-mutation-')) {
+          const mutationId = contact.id.replace(/^queued-/, '')
+          setQueuedSyncItems((current) => current.filter((item) => item.id !== mutationId))
+          setContacts((current) => current.filter((item) => item.id !== contact.id))
+          setLogbooks((current) => current.map((logbook) => (
+            logbook.id === currentLogbookId
+              ? { ...logbook, contactCount: Math.max(0, logbook.contactCount - 1), syncState: 'pending' }
+              : logbook
+          )))
+          setStatusMessage(`Removed queued QSO with ${contact.stationCallsign}.`)
+        } else {
+          const mutationId = createMutationId()
+          setQueuedSyncItems((current) => [{
+            id: mutationId,
+            entityType: 'contact',
+            action: 'delete',
+            createdAt: new Date().toISOString(),
+            payloadSummary: `Queued delete for ${contact.stationCallsign}`,
+            payload: {
+              contactId: contact.id,
+              logbookId: currentLogbookId,
+              stationCallsign: contact.stationCallsign,
+            },
+          }, ...current])
+          setContacts((current) => current.filter((item) => item.id !== contact.id))
+          setLogbooks((current) => current.map((logbook) => (
+            logbook.id === currentLogbookId
+              ? { ...logbook, contactCount: Math.max(0, logbook.contactCount - 1), syncState: 'pending' }
+              : logbook
+          )))
+          setStatusMessage(`Queued delete for ${contact.stationCallsign}.`)
+        }
+      } else {
+        setStatusMessage(`Delete failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
+      }
     } finally {
       setBusy(null)
     }

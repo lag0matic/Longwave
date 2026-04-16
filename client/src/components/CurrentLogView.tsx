@@ -19,6 +19,7 @@ type CurrentLogViewProps = {
   lookupResult: CallsignLookup | null
   rigConnection: RigConnectionSettings
   rigState: RigState | null
+  isOnline: boolean
   queuedSyncItems: PendingMutation[]
   busy: string | null
   setBusy: Dispatch<SetStateAction<string | null>>
@@ -152,6 +153,7 @@ export function CurrentLogView(props: CurrentLogViewProps) {
           <div className="inline-actions">
             <span className="pill">{meta.kind === 'pota' ? `POTA ${meta.potaMode}` : 'Standard'}</span>
             {meta.kind === 'pota' ? <span className="pill">{props.currentLogbook.parkReference ?? 'No park'}</span> : null}
+            <span className="pill">{props.isOnline ? 'Online' : 'Offline'}</span>
             <span className="pill">{props.queuedSyncItems.length} queued</span>
           </div>
         </div>
