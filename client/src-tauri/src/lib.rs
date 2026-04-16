@@ -672,19 +672,29 @@ async fn tune_flrig(app: AppHandle, endpoint: String, frequency_hz: f64, mode: S
   let frequency_result = call_xmlrpc_traced(
     Some(&app),
     &endpoint,
-    "main.set_frequency",
+    "rig.set_frequency",
     std::slice::from_ref(&frequency_double_param),
   )
   .await;
 
   if frequency_result.is_err() {
-    call_xmlrpc_traced(
+    let frequency_result = call_xmlrpc_traced(
       Some(&app),
       &endpoint,
       "main.set_frequency",
-      std::slice::from_ref(&frequency_int_param),
+      std::slice::from_ref(&frequency_double_param),
     )
-    .await?;
+    .await;
+
+    if frequency_result.is_err() {
+      call_xmlrpc_traced(
+        Some(&app),
+        &endpoint,
+        "main.set_frequency",
+        std::slice::from_ref(&frequency_int_param),
+      )
+      .await?;
+    }
   }
 
   let (requested_mode_index, requested_mode) = resolve_flrig_mode(Some(&app), &endpoint, &mode, frequency_hz).await?;
