@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-linux-client:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
 
     defaults:
       run:
@@ -49,12 +49,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Linux desktop client
-        run: npm run tauri:build -- --no-bundle
+      - name: Build Linux AppImage
+        run: npm run tauri:build -- --bundles appimage
 
       - name: Upload Linux client artifact
         uses: actions/upload-artifact@v4
         with:
-          name: longwave-linux-client
-          path: client/src-tauri/target/release/longwave
+          name: longwave-linux-appimage
+          path: client/src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
