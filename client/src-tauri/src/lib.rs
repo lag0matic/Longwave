@@ -56,6 +56,7 @@ enum XmlRpcValue {
   String(String),
   Double(f64),
   Integer(i32),
+  Array(Vec<XmlRpcValue>),
   Boolean,
   Nil,
 }
@@ -72,6 +73,13 @@ impl XmlRpcValue {
     match self {
       Self::Double(value) => Some(*value),
       Self::Integer(value) => Some((*value).into()),
+      _ => None,
+    }
+  }
+
+  fn as_array(&self) -> Option<&[XmlRpcValue]> {
+    match self {
+      Self::Array(values) => Some(values.as_slice()),
       _ => None,
     }
   }
@@ -101,6 +109,42 @@ fn build_xml_request(method_name: &str, params: &[String]) -> String {
   )
 }
 
+fn parse_xmlrpc_value_node(node: roxmltree::Node<'_, '_>) -> Result<XmlRpcValue, String> {
+  if let Some(child) = node.children().find(|candidate| candidate.is_element()) {
+    let text = child.text().unwrap_or_default().trim();
+    return match child.tag_name().name() {
+      "string" => Ok(XmlRpcValue::String(text.to_string())),
+      "double" => text
+        .parse::<f64>()
+        .map(XmlRpcValue::Double)
+        .map_err(|error| error.to_string()),
+      "int" | "i4" => text
+        .parse::<i32>()
+        .map(XmlRpcValue::Integer)
+        .map_err(|error| error.to_string()),
+      "boolean" => Ok(XmlRpcValue::Boolean),
+      "nil" => Ok(XmlRpcValue::Nil),
+      "array" => {
+        let values = child
+          .descendants()
+          .find(|candidate| candidate.has_tag_name("data"))
+          .map(|data| {
+            data.children()
+              .filter(|candidate| candidate.has_tag_name("value"))
+              .map(parse_xmlrpc_value_node)
+              .collect::<Result<Vec<_>, _>>()
+          })
+          .transpose()?
+          .unwrap_or_default();
+        Ok(XmlRpcValue::Array(values))
+      }
+      _ => Ok(XmlRpcValue::String(text.to_string())),
+    };
+  }
+
+  Ok(XmlRpcValue::String(node.text().unwrap_or_default().trim().to_string()))
+}
+
 fn parse_xmlrpc_value(body: &str) -> Result<XmlRpcValue, String> {
   let document = roxmltree::Document::parse(body).map_err(|error| error.to_string())?;
 
@@ -114,30 +158,7 @@ fn parse_xmlrpc_value(body: &str) -> Result<XmlRpcValue, String> {
     .and_then(|node| node.descendants().find(|child| child.has_tag_name("value")))
     .ok_or_else(|| "FLrig returned an XML-RPC response with no value.".to_string())?;
 
-  if let Some(node) = value.children().find(|child| child.is_element()) {
-    let text = node.text().unwrap_or_default().trim();
-    return match node.tag_name().name() {
-      "string" => Ok(XmlRpcValue::String(text.to_string())),
-      "double" => text
-        .parse::<f64>()
-        .map(XmlRpcValue::Double)
-        .map_err(|error| error.to_string()),
-      "int" | "i4" => text
-        .parse::<i32>()
-        .map(XmlRpcValue::Integer)
-        .map_err(|error| error.to_string()),
-      "boolean" => {
-        let _ = text == "1";
-        Ok(XmlRpcValue::Boolean)
-      }
-      "nil" => Ok(XmlRpcValue::Nil),
-      _ => Ok(XmlRpcValue::String(text.to_string())),
-    };
-  }
-
-  Ok(XmlRpcValue::String(
-    value.text().unwrap_or_default().trim().to_string(),
-  ))
+  parse_xmlrpc_value_node(value)
 }
 
 async fn call_xmlrpc(endpoint: &str, method_name: &str, params: &[String]) -> Result<XmlRpcValue, String> {
@@ -158,6 +179,72 @@ async fn call_xmlrpc(endpoint: &str, method_name: &str, params: &[String]) -> Re
   }
 
   parse_xmlrpc_value(&body)
+}
+
+fn normalize_mode_name(mode: &str) -> String {
+  mode
+    .chars()
+    .filter(|character| character.is_ascii_alphanumeric())
+    .collect::<String>()
+    .to_uppercase()
+}
+
+fn digital_mode_candidates(requested_mode: &str, frequency_hz: f64) -> Vec<String> {
+  let normalized = normalize_mode_name(requested_mode);
+  let upper_sideband = frequency_hz >= 10_000_000.0 || frequency_hz == 0.0;
+  let ssb_sideband = if upper_sideband { "USB" } else { "LSB" };
+
+  match normalized.as_str() {
+    "SSB" => vec![ssb_sideband.to_string()],
+    "CW" | "CWR" | "AM" | "FM" => vec![normalized],
+    "FT8" | "FT4" | "JS8" | "PSK" | "PSK31" | "PSK63" | "RTTY" | "DIGITAL" | "DIGI" => vec![
+      "PKTUSB".to_string(),
+      "USBD".to_string(),
+      "DATAUSB".to_string(),
+      "DIGU".to_string(),
+      "USB".to_string(),
+    ],
+    _ => vec![normalized],
+  }
+}
+
+async fn resolve_flrig_mode(endpoint: &str, requested_mode: &str, frequency_hz: f64) -> Result<String, String> {
+  let available_modes = call_xmlrpc(endpoint, "rig.get_modes", &[]).await?;
+  let mode_table = available_modes
+    .as_array()
+    .ok_or_else(|| "FLrig did not return a mode table.".to_string())?;
+
+  let indexed_modes = mode_table
+    .iter()
+    .enumerate()
+    .filter_map(|(index, value)| value.as_string().map(|mode| (index as i32, mode.to_string())))
+    .collect::<Vec<_>>();
+
+  if indexed_modes.is_empty() {
+    return Err("FLrig returned an empty mode table.".to_string());
+  }
+
+  let requested_candidates = digital_mode_candidates(requested_mode, frequency_hz);
+
+  for candidate in requested_candidates {
+    if let Some((_, mode)) = indexed_modes
+      .iter()
+      .find(|(_, mode)| normalize_mode_name(mode) == candidate)
+      .cloned()
+    {
+      return Ok(mode);
+    }
+  }
+
+  Err(format!(
+    "Rig mode '{}' was not available. FLrig reported: {}",
+    requested_mode,
+    indexed_modes
+      .iter()
+      .map(|(_, mode)| mode.as_str())
+      .collect::<Vec<_>>()
+      .join(", ")
+  ))
 }
 
 fn format_fingerprint(bytes: &[u8]) -> String {
@@ -492,33 +579,53 @@ async fn read_flrig_state(endpoint: String) -> Result<RigState, String> {
 
 #[tauri::command]
 async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result<RigCommandResult, String> {
-  let frequency = call_xmlrpc(
+  let frequency_param = build_param(&format!("{frequency_hz:.0}"), "int");
+  call_xmlrpc(
     &endpoint,
-    "rig.set_verify_frequency",
-    &[build_param(&format!("{frequency_hz:.0}"), "double")],
+    "main.set_frequency",
+    std::slice::from_ref(&frequency_param),
   )
   .await?;
 
-  let requested_mode = mode.to_uppercase();
-  let verify_mode = call_xmlrpc(
+  let requested_mode = resolve_flrig_mode(&endpoint, &mode, frequency_hz).await?;
+  call_xmlrpc(
     &endpoint,
-    "rig.set_verify_mode",
+    "rig.set_mode",
     &[build_param(&xml_escape(&requested_mode), "string")],
   )
   .await?;
 
-  let confirmed_frequency = frequency.as_double().unwrap_or(frequency_hz);
-  let confirmed_mode = verify_mode
+  let confirmed_frequency = call_xmlrpc(&endpoint, "rig.get_vfo", &[])
+    .await?
+    .as_double()
+    .unwrap_or(0.0);
+  let confirmed_mode = call_xmlrpc(&endpoint, "rig.get_mode", &[])
+    .await?
     .as_string()
     .map(str::to_string)
-    .unwrap_or(requested_mode);
+    .unwrap_or_default();
+
+  let frequency_matches = (confirmed_frequency - frequency_hz).abs() <= 10.0;
+  let mode_matches = normalize_mode_name(&confirmed_mode) == normalize_mode_name(&requested_mode);
+  let ok = frequency_matches && mode_matches;
 
   Ok(RigCommandResult {
-    ok: true,
-    message: format!(
-      "Rig tuned through {} to {:.0} Hz {}.",
-      endpoint, confirmed_frequency, confirmed_mode
-    ),
+    ok,
+    message: if ok {
+      format!(
+        "Rig tuned through {} to {:.0} Hz {}.",
+        endpoint, confirmed_frequency, confirmed_mode
+      )
+    } else {
+      format!(
+        "Rig tune did not confirm on {}. Requested {:.0} Hz {} but rig reports {:.0} Hz {}.",
+        endpoint,
+        frequency_hz,
+        requested_mode,
+        confirmed_frequency,
+        confirmed_mode
+      )
+    },
   })
 }
 

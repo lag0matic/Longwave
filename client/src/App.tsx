@@ -4,6 +4,7 @@ import './App.css'
 import { LogsView } from './components/LogsView'
 import { CurrentLogView } from './components/CurrentLogView'
 import { SettingsView } from './components/SettingsView'
+import { draftFromSpot } from './data/mockData'
 import { spots as fallbackSpots } from './data/mockData'
 import {
   createContact,
@@ -469,7 +470,19 @@ function App() {
     try {
       const state = await readFlrigState(rigConnection)
       setRigState(state)
-      setStatusMessage(`Connected to ${state.radioName ?? state.endpoint}.`)
+      if (typeof state.frequencyHz === 'number' || state.mode) {
+        setDraft((current) => {
+          const nextFrequencyKhz = typeof state.frequencyHz === 'number' ? state.frequencyHz / 1000 : current.frequencyKhz
+          const nextMode = state.mode ? state.mode.toUpperCase() : current.mode
+          return {
+            ...current,
+            frequencyKhz: nextFrequencyKhz,
+            band: bandFromFrequencyKhz(nextFrequencyKhz) || current.band,
+            mode: nextMode,
+          }
+        })
+      }
+      setStatusMessage(`Read ${state.radioName ?? state.endpoint}${typeof state.frequencyHz === 'number' ? ` at ${(state.frequencyHz / 1000).toFixed(3)} MHz` : ''}${state.mode ? ` ${state.mode}` : ''}.`)
     } catch (error) {
       setStatusMessage(`Rig read failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
     } finally {
@@ -477,12 +490,26 @@ function App() {
     }
   }
 
-  async function handleTuneRig() {
+  async function handleTuneRig(spot?: Spot) {
     setBusy('Tuning Rig')
     try {
-      const result = await tuneFlrig(rigConnection, { frequencyHz: selectedSpot.frequencyKhz * 1000, mode: selectedSpot.mode })
+      const targetSpot = spot ?? selectedSpot
+      const targetFrequencyHz = spot ? targetSpot.frequencyKhz * 1000 : draft.frequencyKhz * 1000
+      const targetMode = (spot ? targetSpot.mode : draft.mode).toUpperCase()
+      if (spot) {
+        setSelectedSpot(targetSpot)
+        setDraft((current) => ({
+          ...draftFromSpot(targetSpot, current.operatorCallsign, currentLogbookId ?? current.logbookId),
+          stationCallsign: targetSpot.activatorCallsign,
+          operatorCallsign: current.operatorCallsign,
+        }))
+      }
+      const result = await tuneFlrig(rigConnection, { frequencyHz: targetFrequencyHz, mode: targetMode })
       setStatusMessage(result.message)
-      if (result.ok) setRigState(await readFlrigState(rigConnection))
+      if (result.ok) {
+        const state = await readFlrigState(rigConnection)
+        setRigState(state)
+      }
     } catch (error) {
       setStatusMessage(`Rig tune failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
     } finally {

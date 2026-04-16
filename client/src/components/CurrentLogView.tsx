@@ -29,7 +29,7 @@ type CurrentLogViewProps = {
   handleSaveContact: () => Promise<void>
   handleDeleteContact: (contact: Contact) => Promise<void>
   handleReadRig: () => Promise<void>
-  handleTuneRig: () => Promise<void>
+  handleTuneRig: (spot?: Spot) => Promise<void>
   handleExportAdif: () => Promise<void>
   handleUploadQrz: () => Promise<void>
   handlePostSpot: (selfSpot: boolean, comment: string) => Promise<void>
@@ -134,6 +134,11 @@ export function CurrentLogView(props: CurrentLogViewProps) {
       operatorCallsign: current.operatorCallsign,
     }))
     props.setStatusMessage(`Loaded ${spot.activatorCallsign} ${spot.parkReference} into the QSO form.`)
+  }
+
+  async function tuneToSpot(spot: Spot) {
+    useSpot(spot)
+    await props.handleTuneRig(spot)
   }
 
   return (
@@ -327,6 +332,7 @@ export function CurrentLogView(props: CurrentLogViewProps) {
                       <div className="spot-card-actions">
                         <button onClick={() => props.setSelectedSpot(spot)}>Select</button>
                         <button className="primary" onClick={() => useSpot(spot)}>Use Spot</button>
+                        <button onClick={() => void tuneToSpot(spot)}>Tune</button>
                       </div>
                     </article>
                   )
