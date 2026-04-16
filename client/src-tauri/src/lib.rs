@@ -216,7 +216,7 @@ fn digital_mode_candidates(requested_mode: &str, frequency_hz: f64) -> Vec<Strin
   }
 }
 
-async fn resolve_flrig_mode(endpoint: &str, requested_mode: &str, frequency_hz: f64) -> Result<String, String> {
+async fn resolve_flrig_mode(endpoint: &str, requested_mode: &str, frequency_hz: f64) -> Result<(i32, String), String> {
   let available_modes = call_xmlrpc(endpoint, "rig.get_modes", &[]).await?;
   let mode_table = available_modes
     .as_array()
@@ -235,12 +235,12 @@ async fn resolve_flrig_mode(endpoint: &str, requested_mode: &str, frequency_hz: 
   let requested_candidates = digital_mode_candidates(requested_mode, frequency_hz);
 
   for candidate in requested_candidates {
-    if let Some((_, mode)) = indexed_modes
+    if let Some((index, mode)) = indexed_modes
       .iter()
       .find(|(_, mode)| normalize_mode_name(mode) == candidate)
       .cloned()
     {
-      return Ok(mode);
+      return Ok((index, mode));
     }
   }
 
@@ -634,13 +634,23 @@ async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result
   )
   .await?;
 
-  let requested_mode = resolve_flrig_mode(&endpoint, &mode, frequency_hz).await?;
-  call_xmlrpc(
+  let (requested_mode_index, requested_mode) = resolve_flrig_mode(&endpoint, &mode, frequency_hz).await?;
+  let mode_result = call_xmlrpc(
     &endpoint,
     "rig.set_mode",
-    &[build_param(&xml_escape(&requested_mode), "string")],
+    &[build_param(&requested_mode_index.to_string(), "int")],
   )
-  .await?;
+  .await;
+
+  if mode_result.is_err() {
+    // ShackStack's FLrig-compatible server accepts the mode name directly.
+    call_xmlrpc(
+      &endpoint,
+      "rig.set_mode",
+      &[build_param(&xml_escape(&requested_mode), "string")],
+    )
+    .await?;
+  }
 
   let confirmed_frequency = call_xmlrpc(&endpoint, "rig.get_vfo", &[])
     .await?
