@@ -6,7 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use url::Url;
 
 #[derive(Serialize)]
@@ -45,6 +45,15 @@ struct ServerCertificateInfo {
 struct DesktopImportAdifResponse {
   imported_count: usize,
   endpoint: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct FlrigTraceEvent {
+  endpoint: String,
+  method: String,
+  stage: String,
+  detail: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -169,18 +178,50 @@ fn parse_xmlrpc_value(body: &str) -> Result<XmlRpcValue, String> {
   parse_xmlrpc_value_node(value)
 }
 
-async fn call_xmlrpc(endpoint: &str, method_name: &str, params: &[String]) -> Result<XmlRpcValue, String> {
+fn emit_flrig_trace(app: Option<&AppHandle>, endpoint: &str, method: &str, stage: &str, detail: String) {
+  if let Some(app) = app {
+    let _ = app.emit(
+      "flrig-trace",
+      FlrigTraceEvent {
+        endpoint: endpoint.to_string(),
+        method: method.to_string(),
+        stage: stage.to_string(),
+        detail,
+      },
+    );
+  }
+}
+
+async fn call_xmlrpc_traced(
+  app: Option<&AppHandle>,
+  endpoint: &str,
+  method_name: &str,
+  params: &[String],
+) -> Result<XmlRpcValue, String> {
   let client = Client::new();
+  let request_body = build_xml_request(method_name, params);
+  emit_flrig_trace(app, endpoint, method_name, "request", request_body.clone());
   let response = client
     .post(endpoint)
     .header("Content-Type", "text/xml")
-    .body(build_xml_request(method_name, params))
+    .body(request_body)
     .send()
     .await
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| {
+      let message = error.to_string();
+      emit_flrig_trace(app, endpoint, method_name, "error", message.clone());
+      message
+    })?;
 
   let status = response.status();
   let body = response.text().await.map_err(|error| error.to_string())?;
+  emit_flrig_trace(
+    app,
+    endpoint,
+    method_name,
+    "response",
+    format!("HTTP {}\n{}", status.as_u16(), body),
+  );
 
   if !status.is_success() {
     return Err(format!("Rig endpoint returned HTTP {}: {}", status.as_u16(), body));
@@ -216,8 +257,8 @@ fn digital_mode_candidates(requested_mode: &str, frequency_hz: f64) -> Vec<Strin
   }
 }
 
-async fn resolve_flrig_mode(endpoint: &str, requested_mode: &str, frequency_hz: f64) -> Result<(i32, String), String> {
-  let available_modes = call_xmlrpc(endpoint, "rig.get_modes", &[]).await?;
+async fn resolve_flrig_mode(app: Option<&AppHandle>, endpoint: &str, requested_mode: &str, frequency_hz: f64) -> Result<(i32, String), String> {
+  let available_modes = call_xmlrpc_traced(app, endpoint, "rig.get_modes", &[]).await?;
   let mode_table = available_modes
     .as_array()
     .ok_or_else(|| "FLrig did not return a mode table.".to_string())?;
@@ -597,20 +638,20 @@ fn desktop_store_set(app: AppHandle, key: String, value: serde_json::Value) -> R
 }
 
 #[tauri::command]
-async fn read_flrig_state(endpoint: String) -> Result<RigState, String> {
-  let version = call_xmlrpc(&endpoint, "main.get_version", &[])
+async fn read_flrig_state(app: AppHandle, endpoint: String) -> Result<RigState, String> {
+  let version = call_xmlrpc_traced(Some(&app), &endpoint, "main.get_version", &[])
     .await
     .ok()
     .and_then(|value| value.as_string().map(str::to_string));
-  let radio_name = call_xmlrpc(&endpoint, "rig.get_xcvr", &[])
+  let radio_name = call_xmlrpc_traced(Some(&app), &endpoint, "rig.get_xcvr", &[])
     .await
     .ok()
     .and_then(|value| value.as_string().map(str::to_string));
-  let frequency_hz = call_xmlrpc(&endpoint, "rig.get_vfo", &[])
+  let frequency_hz = call_xmlrpc_traced(Some(&app), &endpoint, "rig.get_vfo", &[])
     .await
     .ok()
     .and_then(|value| value.as_double());
-  let mode = call_xmlrpc(&endpoint, "rig.get_mode", &[])
+  let mode = call_xmlrpc_traced(Some(&app), &endpoint, "rig.get_mode", &[])
     .await
     .ok()
     .and_then(|value| value.as_string().map(str::to_string));
@@ -625,10 +666,11 @@ async fn read_flrig_state(endpoint: String) -> Result<RigState, String> {
 }
 
 #[tauri::command]
-async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result<RigCommandResult, String> {
+async fn tune_flrig(app: AppHandle, endpoint: String, frequency_hz: f64, mode: String) -> Result<RigCommandResult, String> {
   let frequency_double_param = build_param(&format!("{frequency_hz:.6}"), "double");
   let frequency_int_param = build_param(&format!("{frequency_hz:.0}"), "int");
-  let frequency_result = call_xmlrpc(
+  let frequency_result = call_xmlrpc_traced(
+    Some(&app),
     &endpoint,
     "main.set_frequency",
     std::slice::from_ref(&frequency_double_param),
@@ -636,7 +678,8 @@ async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result
   .await;
 
   if frequency_result.is_err() {
-    call_xmlrpc(
+    call_xmlrpc_traced(
+      Some(&app),
       &endpoint,
       "main.set_frequency",
       std::slice::from_ref(&frequency_int_param),
@@ -644,8 +687,9 @@ async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result
     .await?;
   }
 
-  let (requested_mode_index, requested_mode) = resolve_flrig_mode(&endpoint, &mode, frequency_hz).await?;
-  let mode_result = call_xmlrpc(
+  let (requested_mode_index, requested_mode) = resolve_flrig_mode(Some(&app), &endpoint, &mode, frequency_hz).await?;
+  let mode_result = call_xmlrpc_traced(
+    Some(&app),
     &endpoint,
     "rig.set_mode",
     &[build_param(&xml_escape(&requested_mode), "string")],
@@ -654,7 +698,8 @@ async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result
 
   if mode_result.is_err() {
     // Some FLrig-compatible endpoints accept the mode index directly.
-    call_xmlrpc(
+    call_xmlrpc_traced(
+      Some(&app),
       &endpoint,
       "rig.set_mode",
       &[build_param(&requested_mode_index.to_string(), "int")],
@@ -662,11 +707,11 @@ async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result
     .await?;
   }
 
-  let confirmed_frequency = call_xmlrpc(&endpoint, "rig.get_vfo", &[])
+  let confirmed_frequency = call_xmlrpc_traced(Some(&app), &endpoint, "rig.get_vfo", &[])
     .await?
     .as_double()
     .unwrap_or(0.0);
-  let confirmed_mode = call_xmlrpc(&endpoint, "rig.get_mode", &[])
+  let confirmed_mode = call_xmlrpc_traced(Some(&app), &endpoint, "rig.get_mode", &[])
     .await?
     .as_string()
     .map(str::to_string)

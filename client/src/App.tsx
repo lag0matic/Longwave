@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import './App.css'
 import { LogsView } from './components/LogsView'
 import { CurrentLogView } from './components/CurrentLogView'
@@ -63,6 +64,15 @@ export type NewLogbookForm = {
 export const defaultConnection: ClientConnectionSettings = { serverUrl: 'http://127.0.0.1:8000/api/v1', additionalServerUrls: '', apiToken: '', adminToken: '', pinnedFingerprint: '' }
 export const defaultRigConnection: RigConnectionSettings = { endpoint: 'http://127.0.0.1:12345' }
 export const defaultNewLogbook: NewLogbookForm = { name: '', kind: 'standard', potaMode: 'hunting', parkReference: '', activationDate: '' }
+
+type FlrigTraceEntry = {
+  id: string
+  timestamp: string
+  endpoint: string
+  method: string
+  stage: string
+  detail: string
+}
 
 export function loadStored<T>(key: string, fallback: T) {
   const saved = window.localStorage.getItem(key)
@@ -306,6 +316,8 @@ function App() {
   const [busy, setBusy] = useState<string | null>(null)
   const [settingsForm, setSettingsForm] = useState<ServerSettingsForm>({ stationCallsign: '', stationName: '', myGridSquare: '', myState: '', myCounty: '', qrzUsername: '', qrzPassword: '', qrzApiKey: '' })
   const [desktopCacheReady, setDesktopCacheReady] = useState(() => !desktopRuntime)
+  const [showFlrigTrace, setShowFlrigTrace] = useState(desktopRuntime)
+  const [flrigTrace, setFlrigTrace] = useState<FlrigTraceEntry[]>([])
 
   const currentLogbook = useMemo(() => logbooks.find((logbook) => logbook.id === currentLogbookId) ?? null, [logbooks, currentLogbookId])
 
@@ -367,6 +379,34 @@ function App() {
       cancelled = true
     }
   }, [])
+  useEffect(() => {
+    if (!desktopRuntime) {
+      return
+    }
+
+    let unsubscribe: (() => void) | undefined
+
+    void listen<{ endpoint: string; method: string; stage: string; detail: string }>('flrig-trace', (event) => {
+      const payload = event.payload
+      setFlrigTrace((current) => [
+        ...current.slice(-199),
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: new Date().toLocaleTimeString(),
+          endpoint: payload.endpoint,
+          method: payload.method,
+          stage: payload.stage,
+          detail: payload.detail,
+        },
+      ])
+    }).then((unlisten) => {
+      unsubscribe = unlisten
+    }).catch(() => undefined)
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [desktopRuntime])
 
   useEffect(() => {
     persistValue(queueStorageKey, queuedSyncItems)
@@ -617,6 +657,40 @@ function App() {
         {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, isOnline, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
         {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, activeServerUrl, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, saveServerSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
+      {desktopRuntime ? (
+        showFlrigTrace ? (
+          <section className="flrig-trace-panel">
+            <div className="flrig-trace-header">
+              <strong>FLrig Trace</strong>
+              <div className="flrig-trace-actions">
+                <button type="button" onClick={() => setFlrigTrace([])}>Clear</button>
+                <button type="button" onClick={() => setShowFlrigTrace(false)}>Hide</button>
+              </div>
+            </div>
+            <div className="flrig-trace-list">
+              {flrigTrace.length === 0 ? (
+                <div className="flrig-trace-empty">Waiting for FLrig activity…</div>
+              ) : (
+                flrigTrace.map((entry) => (
+                  <article key={entry.id} className={`flrig-trace-entry ${entry.stage}`}>
+                    <div className="flrig-trace-meta">
+                      <span>{entry.timestamp}</span>
+                      <span>{entry.method}</span>
+                      <span>{entry.stage}</span>
+                    </div>
+                    <div className="flrig-trace-endpoint">{entry.endpoint}</div>
+                    <pre>{entry.detail}</pre>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        ) : (
+          <button type="button" className="flrig-trace-toggle" onClick={() => setShowFlrigTrace(true)}>
+            FLrig Trace
+          </button>
+        )
+      ) : null}
     </div>
   )
 
