@@ -98,6 +98,68 @@ More server-specific detail is in:
 
 - [server/README.md](C:/Users/lag0m/Documents/Longwave/server/README.md)
 
+## Self-Signed HTTPS Setup
+
+Longwave currently supports a self-signed HTTPS workflow for personal remote access.
+
+### 1. Generate the certificate on the Windows server
+
+If you already have OpenSSL installed:
+
+```powershell
+mkdir C:\Longwave\certs -Force
+cd C:\Longwave\certs
+
+& "C:\Program Files\OpenSSL-Win64\bin\openssl.exe" req -x509 -newkey rsa:4096 -sha256 -days 825 -nodes `
+  -keyout privkey.pem `
+  -out fullchain.pem `
+  -subj "/CN=thearkive.xyz" `
+  -addext "subjectAltName=DNS:thearkive.xyz"
+```
+
+If OpenSSL is not installed yet:
+
+```powershell
+winget install ShiningLight.OpenSSL.Light
+```
+
+Then reopen PowerShell and run the certificate command above.
+
+### 2. Point the Windows server at the certificate
+
+Edit:
+
+- `%LOCALAPPDATA%\LongwaveServer\.env`
+
+And set:
+
+```env
+HOST=0.0.0.0
+PORT=443
+SSL_CERTFILE=C:\Longwave\certs\fullchain.pem
+SSL_KEYFILE=C:\Longwave\certs\privkey.pem
+ALLOWED_HOSTS=thearkive.xyz,127.0.0.1,localhost,192.168.4.194
+```
+
+Then restart `LongwaveServer.exe`.
+
+### 3. Open the firewall / router
+
+- allow `TCP 443` through Windows Firewall
+- forward `TCP 443` on your router to the Windows server if you want remote access from outside your LAN
+
+### 4. Trust the server from the desktop app
+
+The desktop client does not rely on the OS certificate store anymore for Longwave itself.
+
+Instead:
+
+1. set your primary and fallback server URLs in the desktop app
+2. click `Trust Server`
+3. Longwave pins the server identity for future connections
+
+This means you do **not** need to manually install the certificate on every desktop client just to use Longwave.
+
 ## Running The Desktop Client
 
 ### Windows
