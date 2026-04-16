@@ -26,6 +26,7 @@ import {
   updateAppSettings,
 } from './services/api'
 import { isDesktopRuntime } from './services/desktop'
+import { desktopStoreGet, desktopStoreSet } from './services/desktopStore'
 import { readFlrigState, tuneFlrig } from './services/flrig'
 import type {
   AppSettings,
@@ -98,6 +99,7 @@ function currentLogbookStorageKey(connection: ClientConnectionSettings) {
 
 function setStored<T>(key: string, value: T) {
   window.localStorage.setItem(key, JSON.stringify(value))
+  void desktopStoreSet(key, value)
 }
 
 function loadCachedContacts(connection: ClientConnectionSettings, logbookId: string) {
@@ -236,6 +238,49 @@ function App() {
 
   const currentLogbook = useMemo(() => logbooks.find((logbook) => logbook.id === currentLogbookId) ?? null, [logbooks, currentLogbookId])
 
+  useEffect(() => {
+    if (!desktopRuntime) {
+      return
+    }
+
+    let cancelled = false
+
+    async function hydrateDesktopState() {
+      const [
+        storedQueue,
+        storedRig,
+        storedOperator,
+        storedSettings,
+        storedLogbooks,
+        storedCurrentLogbookId,
+      ] = await Promise.all([
+        desktopStoreGet<PendingMutation[]>(queueStorageKey),
+        desktopStoreGet<RigConnectionSettings>(rigStorageKey),
+        desktopStoreGet<OperatorProfile | null>(operatorCacheKey(initialConnection)),
+        desktopStoreGet<AppSettings | null>(settingsCacheKey(initialConnection)),
+        desktopStoreGet<Logbook[]>(logbooksCacheKey(initialConnection)),
+        desktopStoreGet<string | null>(currentLogbookStorageKey(initialConnection)),
+      ])
+
+      if (cancelled) {
+        return
+      }
+
+      if (storedQueue) setQueuedSyncItems(storedQueue)
+      if (storedRig) setRigConnection(storedRig)
+      if (storedOperator !== null) setOperator(storedOperator)
+      if (storedSettings !== null) setAppSettings(storedSettings)
+      if (storedLogbooks) setLogbooks(storedLogbooks)
+      if (storedCurrentLogbookId) setCurrentLogbookId(storedCurrentLogbookId)
+    }
+
+    void hydrateDesktopState()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   useEffect(() => { setStored(queueStorageKey, queuedSyncItems) }, [queuedSyncItems])
   useEffect(() => { setStored(rigStorageKey, rigConnection) }, [rigConnection])
   useEffect(() => {
@@ -286,9 +331,16 @@ function App() {
   useEffect(() => {
     if (!currentLogbookId) return
     setContacts(loadCachedContacts(connection, currentLogbookId))
+    if (desktopRuntime) {
+      void desktopStoreGet<Contact[]>(contactsCacheKey(connection, currentLogbookId)).then((storedContacts) => {
+        if (storedContacts) {
+          setContacts(storedContacts)
+        }
+      })
+    }
     if (!connection.apiToken) return
     void refreshCurrentLogContacts(currentLogbookId)
-  }, [currentLogbookId, connection.apiToken])
+  }, [connection, connection.apiToken, currentLogbookId, desktopRuntime])
   useEffect(() => {
     if (!connection.apiToken || queuedSyncItems.length === 0 || syncInFlightRef.current || !isOnline) {
       return

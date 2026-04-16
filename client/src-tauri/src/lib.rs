@@ -2,8 +2,11 @@ use native_tls::TlsConnector;
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::PathBuf;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
+use tauri::{AppHandle, Manager};
 use url::Url;
 
 #[derive(Serialize)]
@@ -42,6 +45,11 @@ struct ServerCertificateInfo {
 struct DesktopImportAdifResponse {
   imported_count: usize,
   endpoint: String,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct DesktopCacheDocument {
+  values: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -324,6 +332,32 @@ fn join_url(endpoint: &str, path: &str) -> Result<String, String> {
   Ok(joined)
 }
 
+fn desktop_cache_path(app: &AppHandle) -> Result<PathBuf, String> {
+  let app_data_dir = app
+    .path()
+    .app_data_dir()
+    .map_err(|error| error.to_string())?;
+
+  fs::create_dir_all(&app_data_dir).map_err(|error| error.to_string())?;
+  Ok(app_data_dir.join("desktop-cache.json"))
+}
+
+fn read_desktop_cache_document(app: &AppHandle) -> Result<DesktopCacheDocument, String> {
+  let path = desktop_cache_path(app)?;
+  if !path.exists() {
+    return Ok(DesktopCacheDocument::default());
+  }
+
+  let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
+  serde_json::from_str(&text).map_err(|error| error.to_string())
+}
+
+fn write_desktop_cache_document(app: &AppHandle, document: &DesktopCacheDocument) -> Result<(), String> {
+  let path = desktop_cache_path(app)?;
+  let text = serde_json::to_string_pretty(document).map_err(|error| error.to_string())?;
+  fs::write(path, text).map_err(|error| error.to_string())
+}
+
 async fn send_api_request(
   endpoint: &str,
   method: &str,
@@ -550,6 +584,19 @@ async fn desktop_import_adif(
 }
 
 #[tauri::command]
+fn desktop_store_get(app: AppHandle, key: String) -> Result<Option<serde_json::Value>, String> {
+  let document = read_desktop_cache_document(&app)?;
+  Ok(document.values.get(&key).cloned())
+}
+
+#[tauri::command]
+fn desktop_store_set(app: AppHandle, key: String, value: serde_json::Value) -> Result<(), String> {
+  let mut document = read_desktop_cache_document(&app)?;
+  document.values.insert(key, value);
+  write_desktop_cache_document(&app, &document)
+}
+
+#[tauri::command]
 async fn read_flrig_state(endpoint: String) -> Result<RigState, String> {
   let version = call_xmlrpc(&endpoint, "main.get_version", &[])
     .await
@@ -636,6 +683,8 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       desktop_api_request,
       desktop_import_adif,
+      desktop_store_get,
+      desktop_store_set,
       probe_server_certificate,
       read_flrig_state,
       tune_flrig
