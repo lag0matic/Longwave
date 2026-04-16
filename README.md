@@ -98,6 +98,10 @@ More server-specific detail is in:
 
 - [server/README.md](C:/Users/lag0m/Documents/Longwave/server/README.md)
 
+If you want another application to push logs directly into Longwave, see:
+
+- [docs/integrations.md](C:/Users/lag0m/Documents/Longwave/docs/integrations.md)
+
 ## Self-Signed HTTPS Setup
 
 Longwave currently supports a self-signed HTTPS workflow for personal remote access.
