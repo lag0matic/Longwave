@@ -17,6 +17,7 @@ type LogsViewProps = {
   statusMessage: string
   setStatusMessage: Dispatch<SetStateAction<string>>
   createLogbook: typeof import('../services/api').createLogbook
+  createOfflineLogbook: (draft: NewLogbookForm) => void
   setLogbooks: Dispatch<SetStateAction<Logbook[]>>
   deleteLogbook: typeof import('../services/api').deleteLogbook
   importLogbookAdif: typeof import('../services/api').importLogbookAdif
@@ -38,7 +39,8 @@ export function LogsView(props: LogsViewProps) {
   async function handleCreateLogbook(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!props.isOnline) {
-      props.setStatusMessage('Offline logbook creation is not available yet. Reconnect and create the logbook on the server first.')
+      props.createOfflineLogbook(newLogbook)
+      setNewLogbook(defaultNewLogbook)
       return
     }
     props.setBusy('Creating Logbook')

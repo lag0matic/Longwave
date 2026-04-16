@@ -111,6 +111,17 @@ export type PotaSpotDraft = {
 export type PendingMutation =
   | {
       id: string
+      entityType: 'logbook'
+      action: 'create'
+      createdAt: string
+      payloadSummary: string
+      payload: {
+        localLogbookId: string
+        draft: LogbookCreateDraft
+      }
+    }
+  | {
+      id: string
       entityType: 'contact'
       action: 'create'
       createdAt: string

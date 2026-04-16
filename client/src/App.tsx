@@ -134,6 +134,40 @@ function applyPendingMutationsToContacts(
   return nextContacts
 }
 
+function remapQueuedMutationsLogbookId(
+  queuedSyncItems: PendingMutation[],
+  fromLogbookId: string,
+  toLogbookId: string,
+) {
+  return queuedSyncItems.map((mutation) => {
+    if (mutation.entityType === 'logbook' && mutation.action === 'create' && mutation.payload.localLogbookId === fromLogbookId) {
+      return mutation
+    }
+
+    if (mutation.entityType === 'contact' && mutation.action === 'create' && mutation.payload.logbookId === fromLogbookId) {
+      return {
+        ...mutation,
+        payload: {
+          ...mutation.payload,
+          logbookId: toLogbookId,
+        },
+      }
+    }
+
+    if (mutation.entityType === 'contact' && mutation.action === 'delete' && mutation.payload.logbookId === fromLogbookId) {
+      return {
+        ...mutation,
+        payload: {
+          ...mutation.payload,
+          logbookId: toLogbookId,
+        },
+      }
+    }
+
+    return mutation
+  })
+}
+
 export function bandFromFrequencyKhz(frequencyKhz: number): string {
   if (frequencyKhz >= 1800 && frequencyKhz < 2000) return '160m'
   if (frequencyKhz >= 3500 && frequencyKhz < 4000) return '80m'
@@ -228,6 +262,10 @@ function createQueuedContact(draft: ContactDraft, mutationId: string): Contact {
     lat: draft.lat,
     lon: draft.lon,
   }
+}
+
+function createOfflineLogbookId() {
+  return `offline-logbook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 function sameConnection(a: ClientConnectionSettings, b: ClientConnectionSettings) {
@@ -429,7 +467,34 @@ function App() {
 
     void (async () => {
       try {
-        if (queuedMutation.entityType === 'contact' && queuedMutation.action === 'create') {
+        if (queuedMutation.entityType === 'logbook' && queuedMutation.action === 'create') {
+          const created = await createLogbook(connection, queuedMutation.payload.draft)
+          setLogbooks((current) => current.map((logbook) => (
+            logbook.id === queuedMutation.payload.localLogbookId
+              ? { ...created, syncState: 'synced' }
+              : logbook
+          )))
+          if (currentLogbookId === queuedMutation.payload.localLogbookId) {
+            setCurrentLogbookId(created.id)
+          }
+          if (draft.logbookId === queuedMutation.payload.localLogbookId) {
+            setDraft((current) => ({ ...current, logbookId: created.id }))
+          }
+          const localContacts = await getStoredValue<Contact[]>(
+            contactsCacheKey(connection, queuedMutation.payload.localLogbookId),
+            [],
+            desktopRuntime,
+          )
+          persistValue(contactsCacheKey(connection, created.id), localContacts.map((contact) => ({ ...contact, logbookId: created.id })))
+          setQueuedSyncItems((current) =>
+            remapQueuedMutationsLogbookId(
+              current.filter((item) => item.id !== queuedMutation.id),
+              queuedMutation.payload.localLogbookId,
+              created.id,
+            ),
+          )
+          setStatusMessage(`Synced offline logbook ${created.name}.`)
+        } else if (queuedMutation.entityType === 'contact' && queuedMutation.action === 'create') {
           await createContact(connection, queuedMutation.payload)
           if (currentLogbookId === queuedMutation.payload.logbookId) {
             await refreshCurrentLogContacts(queuedMutation.payload.logbookId)
@@ -548,7 +613,7 @@ function App() {
 
       <main className="app-main">
         <div className="status-banner">{statusMessage}</div>
-        {mainTab === 'logs' ? <LogsView {...{ connection, isOnline, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
+        {mainTab === 'logs' ? <LogsView {...{ connection, isOnline, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, createOfflineLogbook: handleCreateOfflineLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
         {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, isOnline, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
         {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, activeServerUrl, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, saveServerSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
@@ -814,6 +879,44 @@ function App() {
     } finally {
       setBusy(null)
     }
+  }
+
+  function handleCreateOfflineLogbook(newLogbook: NewLogbookForm) {
+    const operatorCallsign = operator?.callsign ?? appSettings?.stationCallsign ?? 'N0CALL'
+    const logbookId = createOfflineLogbookId()
+    const created: Logbook = {
+      id: logbookId,
+      name: newLogbook.name || `Offline log ${new Date().toLocaleDateString()}`,
+      operatorCallsign,
+      parkReference: newLogbook.kind === 'pota' ? newLogbook.parkReference || undefined : undefined,
+      activationDate: newLogbook.activationDate || undefined,
+      notes: encodeLogbookNotes(newLogbook.kind, newLogbook.potaMode),
+      contactCount: 0,
+      syncState: 'pending',
+    }
+
+    setLogbooks((current) => [created, ...current])
+    setCurrentLogbookId(created.id)
+    setMainTab('current')
+    persistValue(contactsCacheKey(connection, created.id), [] as Contact[])
+    setQueuedSyncItems((current) => [{
+      id: createMutationId(),
+      entityType: 'logbook',
+      action: 'create',
+      createdAt: new Date().toISOString(),
+      payloadSummary: `Queued logbook ${created.name}`,
+      payload: {
+        localLogbookId: created.id,
+        draft: {
+          name: created.name,
+          operatorCallsign,
+          parkReference: created.parkReference,
+          activationDate: created.activationDate,
+          notes: created.notes,
+        },
+      },
+    }, ...current])
+    setStatusMessage(`Created offline logbook ${created.name}. It will sync when the server is reachable.`)
   }
 
   async function handleSaveContact() {
