@@ -86,7 +86,7 @@ HOST=0.0.0.0
 PORT=443
 SSL_CERTFILE=C:\Longwave\certs\fullchain.pem
 SSL_KEYFILE=C:\Longwave\certs\privkey.pem
-ALLOWED_HOSTS=thearkive.xyz,127.0.0.1,localhost,192.168.4.194
+ALLOWED_HOSTS=radio.example.net,127.0.0.1,localhost,192.168.1.50
 ENABLE_DOCS=false
 PUBLIC_HEALTHCHECK=false
 SEED_DEMO_DATA=false
@@ -113,8 +113,8 @@ cd C:\Longwave\certs
 & "C:\Program Files\OpenSSL-Win64\bin\openssl.exe" req -x509 -newkey rsa:4096 -sha256 -days 825 -nodes `
   -keyout privkey.pem `
   -out fullchain.pem `
-  -subj "/CN=thearkive.xyz" `
-  -addext "subjectAltName=DNS:thearkive.xyz"
+  -subj "/CN=radio.example.net" `
+  -addext "subjectAltName=DNS:radio.example.net"
 ```
 
 If OpenSSL is not installed yet:
@@ -138,7 +138,7 @@ HOST=0.0.0.0
 PORT=443
 SSL_CERTFILE=C:\Longwave\certs\fullchain.pem
 SSL_KEYFILE=C:\Longwave\certs\privkey.pem
-ALLOWED_HOSTS=thearkive.xyz,127.0.0.1,localhost,192.168.4.194
+ALLOWED_HOSTS=radio.example.net,127.0.0.1,localhost,192.168.1.50
 ```
 
 Then restart `LongwaveServer.exe`.
@@ -217,8 +217,8 @@ The desktop app currently supports:
 
 Typical example:
 
-- primary endpoint: `https://192.168.4.194/api/v1`
-- fallback endpoint: `https://thearkive.xyz/api/v1`
+- primary endpoint: `https://192.168.1.50/api/v1`
+- fallback endpoint: `https://radio.example.net/api/v1`
 
 ## Development
 
