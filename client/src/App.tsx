@@ -96,6 +96,10 @@ function currentLogbookStorageKey(connection: ClientConnectionSettings) {
   return `longwave-current-logbook:${cacheScope(connection)}`
 }
 
+function setStored<T>(key: string, value: T) {
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
+
 export function bandFromFrequencyKhz(frequencyKhz: number): string {
   if (frequencyKhz >= 1800 && frequencyKhz < 2000) return '160m'
   if (frequencyKhz >= 3500 && frequencyKhz < 4000) return '80m'
@@ -228,8 +232,8 @@ function App() {
 
   const currentLogbook = useMemo(() => logbooks.find((logbook) => logbook.id === currentLogbookId) ?? null, [logbooks, currentLogbookId])
 
-  useEffect(() => { window.localStorage.setItem(queueStorageKey, JSON.stringify(queuedSyncItems)) }, [queuedSyncItems])
-  useEffect(() => { window.localStorage.setItem(rigStorageKey, JSON.stringify(rigConnection)) }, [rigConnection])
+  useEffect(() => { setStored(queueStorageKey, queuedSyncItems) }, [queuedSyncItems])
+  useEffect(() => { setStored(rigStorageKey, rigConnection) }, [rigConnection])
   useEffect(() => {
     const handleOnline = () => setIsOnline(true)
     const handleOffline = () => setIsOnline(false)
@@ -240,16 +244,16 @@ function App() {
       window.removeEventListener('offline', handleOffline)
     }
   }, [])
-  useEffect(() => { window.localStorage.setItem(logbooksCacheKey(connection), JSON.stringify(logbooks)) }, [connection, logbooks])
-  useEffect(() => { window.localStorage.setItem(operatorCacheKey(connection), JSON.stringify(operator)) }, [connection, operator])
-  useEffect(() => { window.localStorage.setItem(settingsCacheKey(connection), JSON.stringify(appSettings)) }, [connection, appSettings])
+  useEffect(() => { setStored(logbooksCacheKey(connection), logbooks) }, [connection, logbooks])
+  useEffect(() => { setStored(operatorCacheKey(connection), operator) }, [connection, operator])
+  useEffect(() => { setStored(settingsCacheKey(connection), appSettings) }, [connection, appSettings])
   useEffect(() => {
     if (!currentLogbookId) return
-    window.localStorage.setItem(currentLogbookStorageKey(connection), JSON.stringify(currentLogbookId))
+    setStored(currentLogbookStorageKey(connection), currentLogbookId)
   }, [connection, currentLogbookId])
   useEffect(() => {
     if (!currentLogbookId) return
-    window.localStorage.setItem(contactsCacheKey(connection, currentLogbookId), JSON.stringify(contacts))
+    setStored(contactsCacheKey(connection, currentLogbookId), contacts)
   }, [connection, contacts, currentLogbookId])
   useEffect(() => { if (appSettings) setSettingsForm((current) => ({ ...current, stationCallsign: appSettings.stationCallsign, stationName: appSettings.stationName, myGridSquare: appSettings.myGridSquare ?? '', myState: appSettings.myState ?? '', myCounty: appSettings.myCounty ?? '', qrzUsername: appSettings.qrzUsername ?? '' })) }, [appSettings])
   useEffect(() => { if (connection.apiToken) void refreshServerState(connection) }, [])
@@ -333,42 +337,31 @@ function App() {
     void refreshServerState(connection)
   }, [connection.apiToken, isOnline])
   useEffect(() => {
-    if (!connection.apiToken || !currentLogbookId || mainTab !== 'current') {
+    if (!connection.apiToken) {
       return
     }
 
-    const activeLogbookId = currentLogbookId
     let cancelled = false
 
-    async function refreshOpenLogbookSilently() {
-      if (document.visibilityState === 'hidden') {
+    async function syncWorkingCopySilently() {
+      if (document.visibilityState === 'hidden' || !navigator.onLine) {
         return
       }
 
       try {
-        const [nextContacts, nextLogbooks] = await Promise.all([
-          fetchContacts(connection, activeLogbookId),
-          fetchLogbooks(connection),
-        ])
-
-        if (cancelled) {
-          return
-        }
-
-        setContacts(nextContacts)
-        setLogbooks(nextLogbooks)
+        await syncLocalMirror(connection, currentLogbookId, cancelled)
       } catch {
-        // Keep polling lightweight and quiet; explicit actions still surface errors.
+        // Keep background sync quiet; explicit actions still surface errors.
       }
     }
 
     const intervalId = window.setInterval(() => {
-      void refreshOpenLogbookSilently()
-    }, 10000)
+      void syncWorkingCopySilently()
+    }, 60000)
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        void refreshOpenLogbookSilently()
+        void syncWorkingCopySilently()
       }
     }
 
@@ -379,7 +372,7 @@ function App() {
       window.clearInterval(intervalId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [connection, currentLogbookId, mainTab])
+  }, [connection, currentLogbookId])
   useEffect(() => {
     const normalized = draft.stationCallsign.trim().toUpperCase()
     if (mainTab !== 'current') return
@@ -457,7 +450,8 @@ function App() {
       setActiveServerUrl(activeEndpoint)
       setConnection(targetConnection)
       setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
-      window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
+      setStored(connectionStorageKey, targetConnection)
+      await syncLocalMirror(targetConnection, storedCurrentLogbookId ?? nextLogbooks[0]?.id ?? null)
       setStatusMessage(`Connected to ${activeEndpoint} as ${nextOperator.callsign}.`)
     } catch (error) {
       const cachedOperator = loadStored<OperatorProfile | null>(operatorCacheKey(targetConnection), null)
@@ -477,7 +471,7 @@ function App() {
         })
         setConnection(targetConnection)
         setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
-        window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
+        setStored(connectionStorageKey, targetConnection)
         setStatusMessage(`Offline. Using cached data for ${cachedOperator?.callsign ?? cachedSettings?.stationCallsign ?? 'this server'}.`)
       } else {
         setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
@@ -497,7 +491,7 @@ function App() {
       }
       setActiveServerUrl(result.endpoint)
       setConnectionDraft(updatedConnection)
-      window.localStorage.setItem(connectionStorageKey, JSON.stringify(updatedConnection))
+      setStored(connectionStorageKey, updatedConnection)
       setStatusMessage(`Trusted server certificate from ${result.endpoint}.`)
     } catch (error) {
       setStatusMessage(`Server trust failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
@@ -508,14 +502,16 @@ function App() {
 
   function handleSaveLocalConnection() {
     setConnection(connectionDraft)
-    window.localStorage.setItem(connectionStorageKey, JSON.stringify(connectionDraft))
+    setStored(connectionStorageKey, connectionDraft)
     setActiveServerUrl(getPreferredEndpoint(connectionDraft))
     setStatusMessage('Saved local desktop settings.')
   }
 
   async function refreshCurrentLogContacts(logbookId: string) {
     try {
-      setContacts(await fetchContacts(connection, logbookId))
+      const nextContacts = await fetchContacts(connection, logbookId)
+      setContacts(nextContacts)
+      setStored(contactsCacheKey(connection, logbookId), nextContacts)
     } catch (error) {
       const cachedContacts = loadStored<Contact[]>(contactsCacheKey(connection, logbookId), [])
       setContacts(cachedContacts)
@@ -531,6 +527,54 @@ function App() {
     }
   }
 
+  async function syncLocalMirror(targetConnection: ClientConnectionSettings, targetLogbookId: string | null, cancelled = false) {
+    const [nextOperator, nextLogbooks] = await Promise.all([
+      fetchOperatorProfile(targetConnection),
+      fetchLogbooks(targetConnection),
+    ])
+
+    if (cancelled) {
+      return
+    }
+
+    setOperator(nextOperator)
+    setLogbooks(nextLogbooks)
+    setStored(operatorCacheKey(targetConnection), nextOperator)
+    setStored(logbooksCacheKey(targetConnection), nextLogbooks)
+
+    try {
+      const nextSettings = await fetchAppSettings(targetConnection)
+      if (!cancelled) {
+        setAppSettings(nextSettings)
+        setStored(settingsCacheKey(targetConnection), nextSettings)
+      }
+    } catch {
+      // Admin settings may be unavailable; keep the last cached copy.
+    }
+
+    const contactEntries = await Promise.all(
+      nextLogbooks.map(async (logbook) => {
+        const nextContacts = await fetchContacts(targetConnection, logbook.id)
+        return [logbook.id, nextContacts] as const
+      }),
+    )
+
+    if (cancelled) {
+      return
+    }
+
+    for (const [logbookId, nextContacts] of contactEntries) {
+      setStored(contactsCacheKey(targetConnection, logbookId), nextContacts)
+      if (logbookId === targetLogbookId) {
+        setContacts(nextContacts)
+      }
+    }
+
+    if (targetLogbookId && !nextLogbooks.some((logbook) => logbook.id === targetLogbookId)) {
+      setCurrentLogbookId(nextLogbooks[0]?.id ?? null)
+    }
+  }
+
   async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await saveServerSettings()
@@ -542,7 +586,7 @@ function App() {
         const targetConnection = connectionDraft
         if (!sameConnection(connection, targetConnection)) {
           setConnection(targetConnection)
-          window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
+          setStored(connectionStorageKey, targetConnection)
         }
         setActiveServerUrl(getPreferredEndpoint(targetConnection))
 
