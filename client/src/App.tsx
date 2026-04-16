@@ -154,6 +154,10 @@ export function shouldQueueMutation(error: unknown) {
   return !navigator.onLine || (error instanceof Error && /failed to fetch|network/i.test(error.message))
 }
 
+function isMissingContactError(error: unknown) {
+  return error instanceof Error && /contact not found/i.test(error.message)
+}
+
 export function encodeLogbookNotes(kind: LogbookKind, potaMode: PotaMode) {
   return `LONGWAVE_KIND=${kind};POTA_MODE=${potaMode}`
 }
@@ -434,7 +438,13 @@ function App() {
           setQueuedSyncItems((current) => current.filter((item) => item.id !== queuedMutation.id))
           setStatusMessage(`Synced queued QSO with ${queuedMutation.payload.stationCallsign}.`)
         } else if (queuedMutation.entityType === 'contact' && queuedMutation.action === 'delete') {
-          await deleteContact(connection, queuedMutation.payload.contactId)
+          try {
+            await deleteContact(connection, queuedMutation.payload.contactId)
+          } catch (error) {
+            if (!isMissingContactError(error)) {
+              throw error
+            }
+          }
           if (currentLogbookId === queuedMutation.payload.logbookId) {
             await refreshCurrentLogContacts(queuedMutation.payload.logbookId)
           }
