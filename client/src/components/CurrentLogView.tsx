@@ -332,7 +332,6 @@ export function CurrentLogView(props: CurrentLogViewProps) {
                       <p>{spot.comments ?? 'No comment'}</p>
                       <small>{workedToday ? 'Logged already today' : `Spotted by ${spot.spotterCallsign ?? 'Unknown'}`}</small>
                       <div className="spot-card-actions">
-                        <button onClick={() => props.setSelectedSpot(spot)}>Select</button>
                         <button className="primary" onClick={() => useSpot(spot)}>Use Spot</button>
                         <button onClick={() => void tuneToSpot(spot)}>Tune</button>
                       </div>
