@@ -555,21 +555,22 @@ function App() {
       // Admin settings may be unavailable; keep the last cached copy.
     }
 
-    const contactEntries = await Promise.all(
-      nextLogbooks.map(async (logbook) => {
+    for (const logbook of nextLogbooks) {
+      if (cancelled) {
+        return
+      }
+
+      try {
         const nextContacts = await fetchContacts(targetConnection, logbook.id)
-        return [logbook.id, nextContacts] as const
-      }),
-    )
-
-    if (cancelled) {
-      return
-    }
-
-    for (const [logbookId, nextContacts] of contactEntries) {
-      setStored(contactsCacheKey(targetConnection, logbookId), nextContacts)
-      if (logbookId === targetLogbookId) {
-        setContacts(nextContacts)
+        setStored(contactsCacheKey(targetConnection, logbook.id), nextContacts)
+        if (logbook.id === targetLogbookId) {
+          setContacts(nextContacts)
+        }
+      } catch {
+        const cachedContacts = loadStored<Contact[]>(contactsCacheKey(targetConnection, logbook.id), [])
+        if (logbook.id === targetLogbookId && cachedContacts.length > 0) {
+          setContacts(cachedContacts)
+        }
       }
     }
 
