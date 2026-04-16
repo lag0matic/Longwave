@@ -100,6 +100,10 @@ function setStored<T>(key: string, value: T) {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
+function loadCachedContacts(connection: ClientConnectionSettings, logbookId: string) {
+  return loadStored<Contact[]>(contactsCacheKey(connection, logbookId), [])
+}
+
 export function bandFromFrequencyKhz(frequencyKhz: number): string {
   if (frequencyKhz >= 1800 && frequencyKhz < 2000) return '160m'
   if (frequencyKhz >= 3500 && frequencyKhz < 4000) return '80m'
@@ -280,16 +284,11 @@ function App() {
     })
   }, [currentLogbook, currentLogbookId, operator?.callsign, appSettings?.stationCallsign])
   useEffect(() => {
-    if (!currentLogbookId || !connection.apiToken) return
+    if (!currentLogbookId) return
+    setContacts(loadCachedContacts(connection, currentLogbookId))
+    if (!connection.apiToken) return
     void refreshCurrentLogContacts(currentLogbookId)
   }, [currentLogbookId, connection.apiToken])
-  useEffect(() => {
-    if (!currentLogbookId || contacts.length > 0) return
-    const cachedContacts = loadStored<Contact[]>(contactsCacheKey(connection, currentLogbookId), [])
-    if (cachedContacts.length > 0) {
-      setContacts(cachedContacts)
-    }
-  }, [connection, contacts.length, currentLogbookId])
   useEffect(() => {
     if (!connection.apiToken || queuedSyncItems.length === 0 || syncInFlightRef.current || !isOnline) {
       return
