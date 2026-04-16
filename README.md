@@ -1,137 +1,203 @@
 # Longwave
 
-Longwave is a cloud-synced ham radio logging platform for POTA operators and hunters. This repository is scaffolded as a split server/client application:
+Longwave is a desktop-first ham radio logging application for self-hosted operators who want:
 
-- `server/` is a FastAPI service for cloud log retention, sync, ADIF handling, and centralized integrations like QRZ and POTA.
-- `client/` is now a React + TypeScript desktop-first client with a Tauri shell for Windows and Linux, plus a browser preview for UI development.
-- `docs/` captures the architecture and domain model so the project can grow cleanly.
+- cloud-synced logbooks across their own devices
+- POTA hunting and activating workflows
+- QRZ callsign lookup and QRZ log upload
+- ADIF import/export
+- local FLrig-compatible rig control from the client machine
 
-## Why this stack
+Longwave is currently built as:
 
-- Tauri gives us a real desktop application for Windows and Linux while still letting the UI stay in React.
-- Native desktop packaging is a better fit for FLrig-compatible local control than a browser-only app.
-- The same rig-control surface can target Linux FLrig and Windows ShackStack as long as both present a compatible FLrig XML-RPC endpoint.
-- FastAPI is a strong fit for ADIF workflows, XML/API interop, and structured sync endpoints.
-- The project is organized around explicit domain objects like `Logbook`, `Contact`, `Spot`, and `SyncEvent`.
+- `server/`: a self-hosted FastAPI API for log storage, sync, QRZ integration, ADIF workflows, and POTA spot fetch/post
+- `client/`: a React + TypeScript desktop app with a Tauri shell for Windows and Linux
 
-## Current state
+## Project Status
 
-This initial scaffold includes:
+Longwave is already usable for real logging workflows, but it is still an actively developed project and may contain bugs, rough edges, or incomplete polish.
 
-- server API routes with database-backed logbook/contact CRUD, sync, single-operator profile handling, settings management, token rotation, and integration service stubs
-- ADIF export/import helpers
-- client screens for logbooks, POTA hunting, draft contact capture, sync status, contact map visualization, offline queueing, and server-backed contact/spot actions
-- a Tauri desktop shell with a native FLrig-compatible XML-RPC bridge for Windows and Linux
-- an offline queue model on the client
+This project was built with substantial help from OpenAI Codex.
 
-## Quick start
+## Current Feature Set
 
-### Server
+- self-hosted single-operator server
+- Windows desktop client
+- Linux desktop client
+- multi-logbook workflow
+- standard logbooks
+- POTA hunting logbooks
+- POTA activating logbooks
+- logbook creation and deletion
+- ADIF import into a new logbook
+- ADIF export from a logbook
+- QRZ callsign lookup
+- QRZ log upload
+- POTA spots view with filtering
+- POTA spot posting
+- contact map
+- cross-device sync through the self-hosted server
+- desktop certificate trust workflow for self-signed HTTPS
+- FLrig-compatible local rig read/tune workflow from the client app
 
-1. Create `server/.venv`.
-2. Install dependencies from `server/requirements.txt`.
-3. Copy `server/.env.example` to `server/.env`.
-4. Set at least `DATABASE_URL`, `HOST`, `PORT`, and `CORS_ORIGINS`.
-5. Start with:
-   - Windows GUI host: `python .\windows_host.py`
-   - Windows console host: `.\start-longwave.ps1`
-   - Linux: `./start-longwave.sh`
+## Architecture
 
-The Windows GUI host gives you a small status window with server health and the API token. The startup scripts apply `alembic upgrade head` before starting Uvicorn.
+- The server is intended to run on your own machine, typically a Windows box at home or in the shack.
+- The desktop clients connect to that server over LAN or remote HTTPS.
+- Rig control is client-side only. The computer running the desktop app is the one that talks to FLrig or ShackStack.
+- QRZ calls are made server-side, not directly from the client.
 
-For local testing, SQLite is still fine.
-For a deployed server on another machine, PostgreSQL is the better target, for example:
+## Running The Server
 
-`postgresql+psycopg://longwave:password@server-host/longwave`
+The Windows server is the primary supported host right now.
 
-This server is now modeled as a self-hosted single-operator service. Clients authenticate with an API token using:
+### Windows packaged host
 
-- `X-Api-Key`: client sync token
+The Windows packaged host is:
 
-The token is generated and stored in the local database settings record on first startup.
-Demo seed data is now disabled by default and only appears when `SEED_DEMO_DATA=true`.
+- `server/dist/LongwaveServer.exe`
 
-Current management endpoints include:
+That host:
 
-- `GET /api/v1/settings`
-- `PATCH /api/v1/settings`
-- `POST /api/v1/settings/rotate-token`
+- runs migrations on startup
+- starts the API in the background
+- shows server health
+- shows the client/admin API tokens
 
-Settings currently support station identity plus locally stored QRZ/POTA configuration.
+Runtime data lives under:
 
-There is now a server-specific deployment guide in [server/README.md](C:/Users/lag0m/Documents/Longwave/server/README.md), plus:
+- `%LOCALAPPDATA%\LongwaveServer`
 
-- a Linux `systemd` starter unit at [server/deploy/longwave.service](C:/Users/lag0m/Documents/Longwave/server/deploy/longwave.service)
-- a Docker path via [server/Dockerfile](C:/Users/lag0m/Documents/Longwave/server/Dockerfile)
+Important runtime files include:
+
+- `%LOCALAPPDATA%\LongwaveServer\.env`
+- `%LOCALAPPDATA%\LongwaveServer\longwave.db`
+
+### Server configuration
+
+Copy or create `%LOCALAPPDATA%\LongwaveServer\.env` and set the values you need.
+
+Typical production-style settings:
+
+```env
+ENVIRONMENT=production
+DATABASE_URL=sqlite:///./longwave.db
+HOST=0.0.0.0
+PORT=443
+SSL_CERTFILE=C:\Longwave\certs\fullchain.pem
+SSL_KEYFILE=C:\Longwave\certs\privkey.pem
+ALLOWED_HOSTS=thearkive.xyz,127.0.0.1,localhost,192.168.4.194
+ENABLE_DOCS=false
+PUBLIC_HEALTHCHECK=false
+SEED_DEMO_DATA=false
+```
+
+If you are running the server on your LAN only, you can use a non-HTTPS local setup while testing. For remote use, HTTPS is strongly recommended.
+
+More server-specific detail is in:
+
+- [server/README.md](C:/Users/lag0m/Documents/Longwave/server/README.md)
+
+## Running The Desktop Client
+
+### Windows
+
+Development desktop build:
+
+- `client/src-tauri/target/debug/longwave.exe`
+
+Windows installers built from Tauri:
+
+- `client/src-tauri/target/release/bundle/msi/Longwave_0.1.0_x64_en-US.msi`
+- `client/src-tauri/target/release/bundle/nsis/Longwave_0.1.0_x64-setup.exe`
+
+### Linux
+
+The Linux desktop client is built from the same Tauri app.
+
+For local development:
+
+```bash
+cd client
+npm install
+npm run tauri:build -- --no-bundle
+./src-tauri/target/release/longwave
+```
+
+For packaged Linux builds, GitHub Actions now produces an AppImage artifact.
+
+### Browser preview
+
+The browser preview is useful for UI work, but it is not the full desktop runtime.
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+Desktop-only features include:
+
+- local certificate trust / pinned server identity
+- desktop ADIF import
+- local FLrig/ShackStack control
+
+## Desktop Setup Flow
+
+The desktop app currently supports:
+
+1. primary server endpoint
+2. fallback server endpoints
+3. server trust / pinned fingerprint
+4. client token
+5. admin token
+6. station settings
+
+Typical example:
+
+- primary endpoint: `https://192.168.4.194/api/v1`
+- fallback endpoint: `https://thearkive.xyz/api/v1`
+
+## Development
 
 ### Client
 
-1. Run `npm install` inside `client/`.
-2. Run `npm run dev` for browser UI preview.
-3. Run `npm run tauri:dev` for the desktop app.
-
-The desktop client stores the FLrig/ShackStack endpoint locally on each workstation. For example:
-
-- `http://127.0.0.1:12345`
-- `http://127.0.0.1:12345/RPC2`
-
-### Linux desktop install
-
-For Arch/CachyOS, install the Tauri/Linux prerequisites first:
-
 ```bash
-sudo pacman -Syu
-sudo pacman -S --needed \
-  webkit2gtk-4.1 \
-  base-devel \
-  curl \
-  wget \
-  file \
-  openssl \
-  appmenu-gtk-module \
-  libappindicator-gtk3 \
-  librsvg \
-  xdotool \
-  nodejs \
-  npm \
-  rustup
-rustup default stable
+cd client
+npm install
+npm run build
 ```
 
-Then build the desktop app:
+### Windows desktop build
 
-```bash
-git clone https://github.com/lag0matic/Longwave.git
-cd Longwave/client
-npm install
+```powershell
+cd client
 npm run tauri:build
 ```
 
-The first Linux target to use is the generated AppImage under `client/src-tauri/target/release/bundle/appimage/`.
+### Server
 
-### Self-signed certificate workflow
-
-Longwave currently supports a self-signed HTTPS server well enough for personal remote use. The current workflow is:
-
-1. Generate a self-signed server certificate on the Windows server for your public hostname.
-2. Configure `SSL_CERTFILE`, `SSL_KEYFILE`, and `ALLOWED_HOSTS` in `%LOCALAPPDATA%\\LongwaveServer\\.env`.
-3. Use `https://your-hostname/api/v1` in the desktop client.
-
-For Linux desktop trust, copy the server certificate file to your Linux machine and install it into the local trust store:
-
-```bash
-sudo cp fullchain.pem /etc/ca-certificates/trust-source/anchors/longwave-server.crt
-sudo update-ca-trust
+```powershell
+cd server
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m alembic upgrade head
+python .\windows_host.py
 ```
 
-After that, the Tauri desktop client should trust the self-signed Longwave server certificate through the OS trust store.
+## Notes And Caveats
 
-## Next build steps
+- Longwave is intentionally self-hosted and currently assumes one operator per server instance.
+- Mobile is not the focus right now.
+- Offline support is still evolving. The goal is offline QSO capture first, with later sync once connectivity returns.
+- FLrig support is desktop-only and should not be expected to work on mobile.
+- ShackStack on Windows is treated as an FLrig-compatible endpoint.
 
-1. Add persistent storage with PostgreSQL on the server and IndexedDB on the client.
-2. Implement real QRZ session management and authenticated upload flows.
-3. Connect live POTA APIs and normalize spot data.
-4. Add a first-run setup workflow in the client for station identity, API token pairing, and QRZ/POTA configuration.
-5. Add FLrig/ShackStack connection presets, validation, and richer rig-state feedback in the desktop client.
-6. Add a mobile-first logging mode that hides rig-control affordances cleanly when we return to mobile.
-7. Add a real basemap provider or vector map rendering for richer contact visualization.
+## License
+
+This project is licensed under the MIT License.
+
+See:
+
+- [LICENSE](C:/Users/lag0m/Documents/Longwave/LICENSE)
