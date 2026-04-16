@@ -127,18 +127,20 @@ export function CurrentLogView(props: CurrentLogViewProps) {
     })
   }
 
-  function useSpot(spot: Spot) {
+  function useSpot(spot: Spot, announce = true) {
     props.setSelectedSpot(spot)
     props.setDraft((current) => ({
       ...draftFromSpot(spot, current.operatorCallsign, props.currentLogbook.id),
       stationCallsign: spot.activatorCallsign,
       operatorCallsign: current.operatorCallsign,
     }))
-    props.setStatusMessage(`Loaded ${spot.activatorCallsign} ${spot.parkReference} into the QSO form.`)
+    if (announce) {
+      props.setStatusMessage(`Loaded ${spot.activatorCallsign} ${spot.parkReference} into the QSO form.`)
+    }
   }
 
   async function tuneToSpot(spot: Spot) {
-    useSpot(spot)
+    useSpot(spot, false)
     await props.handleTuneRig(spot)
   }
 
