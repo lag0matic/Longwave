@@ -334,8 +334,11 @@ function App() {
     if (!isOnline || !connection.apiToken) {
       return
     }
+    if (queuedSyncItems.length > 0) {
+      return
+    }
     void refreshServerState(connection)
-  }, [connection.apiToken, isOnline])
+  }, [connection, isOnline, queuedSyncItems.length])
   useEffect(() => {
     if (!connection.apiToken) {
       return
@@ -344,7 +347,7 @@ function App() {
     let cancelled = false
 
     async function syncWorkingCopySilently() {
-      if (document.visibilityState === 'hidden' || !navigator.onLine) {
+      if (document.visibilityState === 'hidden' || !navigator.onLine || queuedSyncItems.length > 0) {
         return
       }
 
@@ -372,7 +375,7 @@ function App() {
       window.clearInterval(intervalId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [connection, currentLogbookId])
+  }, [connection, currentLogbookId, queuedSyncItems.length])
   useEffect(() => {
     const normalized = draft.stationCallsign.trim().toUpperCase()
     if (mainTab !== 'current') return
