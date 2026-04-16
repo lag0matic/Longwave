@@ -107,6 +107,33 @@ async function getStoredValue<T>(key: string, fallback: T, desktopRuntime: boole
   return loadStored<T>(key, fallback)
 }
 
+function applyPendingMutationsToContacts(
+  contacts: Contact[],
+  queuedSyncItems: PendingMutation[],
+  logbookId: string,
+) {
+  let nextContacts = [...contacts]
+
+  for (const mutation of queuedSyncItems) {
+    if (mutation.entityType !== 'contact') {
+      continue
+    }
+
+    if (mutation.action === 'create' && mutation.payload.logbookId === logbookId) {
+      const queuedContact = createQueuedContact(mutation.payload, mutation.id)
+      if (!nextContacts.some((contact) => contact.id === queuedContact.id)) {
+        nextContacts = [queuedContact, ...nextContacts]
+      }
+    }
+
+    if (mutation.action === 'delete' && mutation.payload.logbookId === logbookId) {
+      nextContacts = nextContacts.filter((contact) => contact.id !== mutation.payload.contactId)
+    }
+  }
+
+  return nextContacts
+}
+
 export function bandFromFrequencyKhz(frequencyKhz: number): string {
   if (frequencyKhz >= 1800 && frequencyKhz < 2000) return '160m'
   if (frequencyKhz >= 3500 && frequencyKhz < 4000) return '80m'
@@ -373,7 +400,7 @@ function App() {
         return
       }
 
-      setContacts(cachedContacts)
+      setContacts(applyPendingMutationsToContacts(cachedContacts, queuedSyncItems, logbookId))
 
       if (!connection.apiToken || !isOnline) {
         return
@@ -387,7 +414,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [connection, connection.apiToken, currentLogbookId, desktopRuntime, isOnline])
+  }, [connection, connection.apiToken, currentLogbookId, desktopRuntime, isOnline, queuedSyncItems])
   useEffect(() => {
     if (!connection.apiToken || queuedSyncItems.length === 0 || syncInFlightRef.current || !isOnline) {
       return
@@ -638,7 +665,7 @@ function App() {
   async function refreshCurrentLogContacts(logbookId: string) {
     try {
       const nextContacts = await fetchContacts(connection, logbookId)
-      setContacts(nextContacts)
+      setContacts(applyPendingMutationsToContacts(nextContacts, queuedSyncItems, logbookId))
       persistValue(contactsCacheKey(connection, logbookId), nextContacts)
     } catch (error) {
       const cachedContacts = await getStoredValue<Contact[]>(
@@ -646,7 +673,7 @@ function App() {
         [],
         desktopRuntime,
       )
-      setContacts(cachedContacts)
+      setContacts(applyPendingMutationsToContacts(cachedContacts, queuedSyncItems, logbookId))
       if (cachedContacts.length > 0) {
         setStatusMessage(`Offline. Showing cached QSOs for ${currentLogbook?.name ?? 'this logbook'}.`)
         return
