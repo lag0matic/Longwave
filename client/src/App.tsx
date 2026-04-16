@@ -102,8 +102,14 @@ function setStored<T>(key: string, value: T) {
   void desktopStoreSet(key, value)
 }
 
-function loadCachedContacts(connection: ClientConnectionSettings, logbookId: string) {
-  return loadStored<Contact[]>(contactsCacheKey(connection, logbookId), [])
+async function getStoredValue<T>(key: string, fallback: T, desktopRuntime: boolean) {
+  if (desktopRuntime) {
+    const desktopValue = await desktopStoreGet<T>(key)
+    if (desktopValue !== null) {
+      return desktopValue
+    }
+  }
+  return loadStored<T>(key, fallback)
 }
 
 export function bandFromFrequencyKhz(frequencyKhz: number): string {
@@ -330,17 +336,36 @@ function App() {
   }, [currentLogbook, currentLogbookId, operator?.callsign, appSettings?.stationCallsign])
   useEffect(() => {
     if (!currentLogbookId) return
-    setContacts(loadCachedContacts(connection, currentLogbookId))
-    if (desktopRuntime) {
-      void desktopStoreGet<Contact[]>(contactsCacheKey(connection, currentLogbookId)).then((storedContacts) => {
-        if (storedContacts) {
-          setContacts(storedContacts)
-        }
-      })
+    const logbookId = currentLogbookId
+
+    let cancelled = false
+
+    async function hydrateCurrentLogbook() {
+      const cachedContacts = await getStoredValue<Contact[]>(
+        contactsCacheKey(connection, logbookId),
+        [],
+        desktopRuntime,
+      )
+
+      if (cancelled) {
+        return
+      }
+
+      setContacts(cachedContacts)
+
+      if (!connection.apiToken || !isOnline) {
+        return
+      }
+
+      await refreshCurrentLogContacts(logbookId)
     }
-    if (!connection.apiToken) return
-    void refreshCurrentLogContacts(currentLogbookId)
-  }, [connection, connection.apiToken, currentLogbookId, desktopRuntime])
+
+    void hydrateCurrentLogbook()
+
+    return () => {
+      cancelled = true
+    }
+  }, [connection, connection.apiToken, currentLogbookId, desktopRuntime, isOnline])
   useEffect(() => {
     if (!connection.apiToken || queuedSyncItems.length === 0 || syncInFlightRef.current || !isOnline) {
       return
@@ -567,7 +592,11 @@ function App() {
       setContacts(nextContacts)
       setStored(contactsCacheKey(connection, logbookId), nextContacts)
     } catch (error) {
-      const cachedContacts = loadStored<Contact[]>(contactsCacheKey(connection, logbookId), [])
+      const cachedContacts = await getStoredValue<Contact[]>(
+        contactsCacheKey(connection, logbookId),
+        [],
+        desktopRuntime,
+      )
       setContacts(cachedContacts)
       if (cachedContacts.length > 0) {
         setStatusMessage(`Offline. Showing cached QSOs for ${currentLogbook?.name ?? 'this logbook'}.`)
