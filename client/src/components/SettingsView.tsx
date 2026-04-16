@@ -5,6 +5,7 @@ import type { AppSettings, ClientConnectionSettings, RigConnectionSettings, RigS
 type SettingsViewProps = {
   connection: ClientConnectionSettings
   connectionDraft: ClientConnectionSettings
+  activeServerUrl: string
   setConnectionDraft: Dispatch<SetStateAction<ClientConnectionSettings>>
   handleSaveLocalConnection: () => void
   rigConnection: RigConnectionSettings
@@ -298,6 +299,7 @@ export function SettingsView(props: SettingsViewProps) {
           </div>
         </div>
         <div className="settings-summary">
+          <span className="pill">Active: {props.activeServerUrl}</span>
           <span className="pill">{props.connection.serverUrl}</span>
           {(props.connection.additionalServerUrls ?? '').split(/\r?\n|,/).map((value) => value.trim()).filter(Boolean).map((endpoint) => (
             <span className="pill" key={endpoint}>{endpoint}</span>

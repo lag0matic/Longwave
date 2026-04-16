@@ -6,7 +6,6 @@ import { CurrentLogView } from './components/CurrentLogView'
 import { SettingsView } from './components/SettingsView'
 import { spots as fallbackSpots } from './data/mockData'
 import {
-  applyPreferredEndpoint,
   createContact,
   createLogbook,
   createPotaSpot,
@@ -18,6 +17,7 @@ import {
   fetchLogbooks,
   fetchOperatorProfile,
   fetchPotaSpots,
+  getPreferredEndpoint,
   importLogbookAdif,
   probeServerCertificate,
   lookupCallsign,
@@ -153,6 +153,7 @@ function App() {
   const [logbookTab, setLogbookTab] = useState<LogbookSubTab>('qsos')
   const [connection, setConnection] = useState<ClientConnectionSettings>(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }))
   const [connectionDraft, setConnectionDraft] = useState<ClientConnectionSettings>(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }))
+  const [activeServerUrl, setActiveServerUrl] = useState(() => ({ ...defaultConnection, ...loadStored(connectionStorageKey, defaultConnection) }.serverUrl))
   const [rigConnection, setRigConnection] = useState<RigConnectionSettings>(() => loadStored(rigStorageKey, defaultRigConnection))
   const [operator, setOperator] = useState<OperatorProfile | null>(null)
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
@@ -288,7 +289,7 @@ function App() {
         <div className="status-banner">{statusMessage}</div>
         {mainTab === 'logs' ? <LogsView {...{ connection, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
         {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
-        {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, saveServerSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
+        {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, activeServerUrl, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, saveServerSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
     </div>
   )
@@ -297,7 +298,7 @@ function App() {
     setBusy('Connecting')
     try {
       const [nextOperator, nextLogbooks] = await Promise.all([fetchOperatorProfile(targetConnection), fetchLogbooks(targetConnection)])
-      const resolvedConnection = applyPreferredEndpoint(targetConnection)
+      const activeEndpoint = getPreferredEndpoint(targetConnection)
       setOperator(nextOperator)
       setLogbooks(nextLogbooks)
       setCurrentLogbookId((current) => current ?? nextLogbooks[0]?.id ?? null)
@@ -316,10 +317,11 @@ function App() {
       } catch {
         setSpots(fallbackSpots)
       }
-      setConnection(resolvedConnection)
-      setConnectionDraft((current) => (sameConnection(current, resolvedConnection) ? current : resolvedConnection))
-      window.localStorage.setItem(connectionStorageKey, JSON.stringify(resolvedConnection))
-      setStatusMessage(`Connected to ${resolvedConnection.serverUrl} as ${nextOperator.callsign}.`)
+      setActiveServerUrl(activeEndpoint)
+      setConnection(targetConnection)
+      setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
+      window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
+      setStatusMessage(`Connected to ${activeEndpoint} as ${nextOperator.callsign}.`)
     } catch (error) {
       setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
     } finally {
@@ -331,10 +333,11 @@ function App() {
     setBusy('Trusting Server')
     try {
       const result = await probeServerCertificate(connectionDraft)
-      const updatedConnection = applyPreferredEndpoint({
+      const updatedConnection = {
         ...connectionDraft,
         pinnedFingerprint: result.fingerprint,
-      })
+      }
+      setActiveServerUrl(result.endpoint)
       setConnectionDraft(updatedConnection)
       window.localStorage.setItem(connectionStorageKey, JSON.stringify(updatedConnection))
       setStatusMessage(`Trusted server certificate from ${result.endpoint}.`)
@@ -348,6 +351,7 @@ function App() {
   function handleSaveLocalConnection() {
     setConnection(connectionDraft)
     window.localStorage.setItem(connectionStorageKey, JSON.stringify(connectionDraft))
+    setActiveServerUrl(getPreferredEndpoint(connectionDraft))
     setStatusMessage('Saved local desktop settings.')
   }
 
@@ -362,14 +366,15 @@ function App() {
 
   async function saveServerSettings() {
     setBusy('Saving Settings')
-    try {
-      const targetConnection = connectionDraft
-      if (!sameConnection(connection, targetConnection)) {
-        setConnection(targetConnection)
-        window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
-      }
+      try {
+        const targetConnection = connectionDraft
+        if (!sameConnection(connection, targetConnection)) {
+          setConnection(targetConnection)
+          window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
+        }
+        setActiveServerUrl(getPreferredEndpoint(targetConnection))
 
-      const updated = await updateAppSettings(targetConnection, {
+        const updated = await updateAppSettings(targetConnection, {
         station_callsign: settingsForm.stationCallsign,
         station_name: settingsForm.stationName,
         my_grid_square: settingsForm.myGridSquare,

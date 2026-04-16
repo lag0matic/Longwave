@@ -193,6 +193,10 @@ export function applyPreferredEndpoint(connection: ClientConnectionSettings): Cl
   return updatedConnection
 }
 
+export function getPreferredEndpoint(connection: ClientConnectionSettings) {
+  return preferredEndpointByConnection.get(connectionKey(connection)) ?? normalizeServerUrl(connection.serverUrl)
+}
+
 async function requestJson<T>(connection: ClientConnectionSettings, path: string, init?: RequestInit): Promise<T> {
   if (canUseDesktopApi()) {
     const response = await desktopApiRequest({
