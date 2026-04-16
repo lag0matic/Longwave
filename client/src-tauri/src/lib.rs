@@ -626,28 +626,38 @@ async fn read_flrig_state(endpoint: String) -> Result<RigState, String> {
 
 #[tauri::command]
 async fn tune_flrig(endpoint: String, frequency_hz: f64, mode: String) -> Result<RigCommandResult, String> {
-  let frequency_param = build_param(&format!("{frequency_hz:.0}"), "int");
-  call_xmlrpc(
+  let frequency_double_param = build_param(&format!("{frequency_hz:.6}"), "double");
+  let frequency_int_param = build_param(&format!("{frequency_hz:.0}"), "int");
+  let frequency_result = call_xmlrpc(
     &endpoint,
     "main.set_frequency",
-    std::slice::from_ref(&frequency_param),
+    std::slice::from_ref(&frequency_double_param),
   )
-  .await?;
+  .await;
+
+  if frequency_result.is_err() {
+    call_xmlrpc(
+      &endpoint,
+      "main.set_frequency",
+      std::slice::from_ref(&frequency_int_param),
+    )
+    .await?;
+  }
 
   let (requested_mode_index, requested_mode) = resolve_flrig_mode(&endpoint, &mode, frequency_hz).await?;
   let mode_result = call_xmlrpc(
     &endpoint,
     "rig.set_mode",
-    &[build_param(&requested_mode_index.to_string(), "int")],
+    &[build_param(&xml_escape(&requested_mode), "string")],
   )
   .await;
 
   if mode_result.is_err() {
-    // ShackStack's FLrig-compatible server accepts the mode name directly.
+    // Some FLrig-compatible endpoints accept the mode index directly.
     call_xmlrpc(
       &endpoint,
       "rig.set_mode",
-      &[build_param(&xml_escape(&requested_mode), "string")],
+      &[build_param(&requested_mode_index.to_string(), "int")],
     )
     .await?;
   }
