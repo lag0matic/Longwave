@@ -363,7 +363,10 @@ async def get_pota_spots(
     _: None = Depends(require_api_token),
 ) -> list[Spot]:
     service = PotaService(settings)
-    fetched = await service.fetch_spots()
+    try:
+        fetched = await service.fetch_spots()
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
     SPOTS[:] = fetched
     return SPOTS
 
@@ -375,7 +378,10 @@ async def create_pota_spot(
     _: None = Depends(require_api_token),
 ) -> Spot:
     service = PotaService(settings)
-    spot = await service.create_spot(request)
+    try:
+        spot = await service.create_spot(request)
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
     SPOTS.insert(0, spot)
     return spot
 

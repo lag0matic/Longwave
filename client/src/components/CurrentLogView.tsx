@@ -93,6 +93,7 @@ export function CurrentLogView(props: CurrentLogViewProps) {
   const [spotBandFilter, setSpotBandFilter] = useState('ALL')
   const [spotModeFilter, setSpotModeFilter] = useState('ALL')
   const meta = props.readLogbookMeta(props.currentLogbook)
+  const bandOptions = ['160m', '80m', '60m', '40m', '30m', '20m', '17m', '15m', '12m', '10m', '6m', '2m']
 
   const availableBands = useMemo(() => {
     return Array.from(new Set(props.spots.map((spot) => spot.band).filter(Boolean))).sort((left, right) => left.localeCompare(right))
@@ -157,10 +158,43 @@ export function CurrentLogView(props: CurrentLogViewProps) {
           <label><span>RST Received</span><input value={props.draft.rstRcvd ?? ''} onChange={(event) => props.setDraft((current) => ({ ...current, rstRcvd: event.target.value.toUpperCase() }))} /></label>
           <label><span>UTC Date</span><input value={props.draft.qsoDate} onChange={(event) => props.setDraft((current) => ({ ...current, qsoDate: event.target.value.replace(/\D/g, '').slice(0, 8) }))} placeholder="YYYYMMDD" /></label>
           <label><span>UTC Time</span><input value={props.draft.timeOn} onChange={(event) => props.setDraft((current) => ({ ...current, timeOn: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="HHMM or HHMMSS" /></label>
-          <label><span>Frequency MHz</span><input value={props.draft.frequencyKhz.toFixed(3)} onChange={(event) => props.setDraft((current) => ({ ...current, frequencyKhz: Number(event.target.value) || current.frequencyKhz }))} /></label>
+          <label>
+            <span>Frequency MHz</span>
+            <input
+              type="number"
+              step="0.001"
+              value={(props.draft.frequencyKhz / 1000).toFixed(3)}
+              onChange={(event) => {
+                const frequencyMhz = Number.parseFloat(event.target.value)
+                props.setDraft((current) => ({
+                  ...current,
+                  frequencyKhz: Number.isFinite(frequencyMhz) ? frequencyMhz * 1000 : current.frequencyKhz,
+                }))
+              }}
+            />
+          </label>
           <label><span>Mode</span><input value={props.draft.mode} onChange={(event) => props.setDraft((current) => ({ ...current, mode: event.target.value.toUpperCase() }))} /></label>
           <label><span>TX Power</span><input value={props.draft.txPower ?? ''} onChange={(event) => props.setDraft((current) => ({ ...current, txPower: event.target.value }))} placeholder="Watts" /></label>
-          <label><span>Derived Band</span><input value={bandFromFrequencyKhz(props.draft.frequencyKhz) || props.draft.band || '--'} readOnly /></label>
+          <label>
+            <span>Band</span>
+            <select
+              value={bandFromFrequencyKhz(props.draft.frequencyKhz) || props.draft.band || ''}
+              onChange={(event) => props.setDraft((current) => ({ ...current, band: event.target.value }))}
+            >
+              <option value="">Select band</option>
+              {bandOptions.map((band) => <option key={band} value={band}>{band}</option>)}
+            </select>
+          </label>
+          {meta.kind === 'pota' ? (
+            <label>
+              <span>{meta.potaMode === 'hunting' ? 'Their Park' : 'Park Reference'}</span>
+              <input
+                value={props.draft.parkReference ?? ''}
+                onChange={(event) => props.setDraft((current) => ({ ...current, parkReference: event.target.value.toUpperCase() }))}
+                placeholder="US-1234"
+              />
+            </label>
+          ) : null}
         </div>
 
         <div className="qso-actions">

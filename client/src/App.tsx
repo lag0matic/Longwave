@@ -481,9 +481,40 @@ function App() {
   async function handlePostSpot(selfSpot: boolean, comment: string) {
     setBusy('Posting Spot')
     try {
-      const created = await createPotaSpot(connection, { activatorCallsign: selfSpot ? (operator?.callsign ?? draft.operatorCallsign) : selectedSpot.activatorCallsign, parkReference: selectedSpot.parkReference, frequencyKhz: selectedSpot.frequencyKhz, mode: selectedSpot.mode, band: selectedSpot.band, comments: comment, spotterCallsign: operator?.callsign ?? draft.operatorCallsign })
+      const currentMeta = currentLogbook ? readLogbookMeta(currentLogbook) : null
+      const activatorCallsign = selfSpot
+        ? (draft.operatorCallsign || operator?.callsign || appSettings?.stationCallsign)
+        : (draft.stationCallsign || selectedSpot.activatorCallsign)
+      const parkReference = selfSpot
+        ? (currentLogbook?.parkReference || draft.parkReference || selectedSpot.parkReference)
+        : (draft.parkReference || selectedSpot.parkReference)
+      const frequencyKhz = draft.frequencyKhz || selectedSpot.frequencyKhz
+      const mode = draft.mode || selectedSpot.mode
+      const band = bandFromFrequencyKhz(frequencyKhz) || draft.band || selectedSpot.band
+
+      if (!activatorCallsign || !parkReference) {
+        throw new Error(
+          selfSpot
+            ? 'Self spots need your callsign and park reference.'
+            : 'Spots for another activator need their callsign and park reference.',
+        )
+      }
+
+      const created = await createPotaSpot(connection, {
+        activatorCallsign,
+        parkReference,
+        frequencyKhz,
+        mode,
+        band,
+        comments: comment,
+        spotterCallsign: operator?.callsign ?? draft.operatorCallsign,
+      })
       setSpots((current) => [created, ...current.filter((spot) => spot.id !== created.id)].slice(0, 20))
-      setStatusMessage(`Posted spot for ${created.activatorCallsign}.`)
+      setStatusMessage(
+        selfSpot || currentMeta?.potaMode === 'activating'
+          ? `Posted self spot for ${created.activatorCallsign} at ${created.parkReference}.`
+          : `Posted spot for ${created.activatorCallsign} at ${created.parkReference}.`,
+      )
     } catch (error) {
       setStatusMessage(`Spot post failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
     } finally {

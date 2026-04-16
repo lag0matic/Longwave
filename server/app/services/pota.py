@@ -73,10 +73,16 @@ class PotaService:
         )
 
     async def fetch_spots(self) -> list[Spot]:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(self.settings.pota_spots_url, headers=self._headers())
-            response.raise_for_status()
-            payload = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(self.settings.pota_spots_url, headers=self._headers())
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPStatusError as error:
+            detail = error.response.text.strip() or str(error)
+            raise RuntimeError(f"POTA spot fetch failed: {detail}") from error
+        except httpx.RequestError as error:
+            raise RuntimeError(f"POTA spot fetch failed: {error}") from error
 
         spots = [self._map_spot(entry) for entry in payload if not entry.get("invalid")]
         spots.sort(key=lambda spot: spot.spotted_at, reverse=True)
@@ -92,24 +98,30 @@ class PotaService:
             "comments": request.comments or "",
         }
 
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                self.settings.pota_spot_post_url,
-                headers={**self._headers(), "Content-Type": "application/json"},
-                json=payload,
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    self.settings.pota_spot_post_url,
+                    headers={**self._headers(), "Content-Type": "application/json"},
+                    json=payload,
+                )
+                response.raise_for_status()
 
-            if "application/json" in response.headers.get("content-type", ""):
-                body = response.json()
-                if isinstance(body, dict) and body:
-                    body.setdefault("activator", payload["activator"])
-                    body.setdefault("reference", payload["reference"])
-                    body.setdefault("frequency", payload["frequency"])
-                    body.setdefault("mode", payload["mode"])
-                    body.setdefault("spotter", payload["spotter"])
-                    body.setdefault("comments", payload["comments"])
-                    return self._map_spot(body)
+                if "application/json" in response.headers.get("content-type", ""):
+                    body = response.json()
+                    if isinstance(body, dict) and body:
+                        body.setdefault("activator", payload["activator"])
+                        body.setdefault("reference", payload["reference"])
+                        body.setdefault("frequency", payload["frequency"])
+                        body.setdefault("mode", payload["mode"])
+                        body.setdefault("spotter", payload["spotter"])
+                        body.setdefault("comments", payload["comments"])
+                        return self._map_spot(body)
+        except httpx.HTTPStatusError as error:
+            detail = error.response.text.strip() or str(error)
+            raise RuntimeError(f"POTA spot post failed: {detail}") from error
+        except httpx.RequestError as error:
+            raise RuntimeError(f"POTA spot post failed: {error}") from error
 
         return Spot(
             activator_callsign=payload["activator"],
