@@ -2,7 +2,7 @@ use native_tls::TlsConnector;
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 use url::Url;
 
@@ -170,6 +170,23 @@ fn format_fingerprint(bytes: &[u8]) -> String {
     .join(":")
 }
 
+fn connect_with_timeout(host: &str, port: u16, timeout: Duration) -> Result<TcpStream, String> {
+  let address = format!("{host}:{port}");
+  let socket_addresses = address
+    .to_socket_addrs()
+    .map_err(|error| error.to_string())?;
+
+  let mut last_error = None;
+  for socket_address in socket_addresses {
+    match TcpStream::connect_timeout(&socket_address, timeout) {
+      Ok(stream) => return Ok(stream),
+      Err(error) => last_error = Some(error.to_string()),
+    }
+  }
+
+  Err(last_error.unwrap_or_else(|| format!("Could not connect to {address}")))
+}
+
 fn fetch_server_fingerprint(endpoint: &str) -> Result<String, String> {
   let url = Url::parse(endpoint).map_err(|error| error.to_string())?;
   if url.scheme() != "https" {
@@ -181,9 +198,8 @@ fn fetch_server_fingerprint(endpoint: &str) -> Result<String, String> {
     .ok_or_else(|| "Endpoint host was missing.".to_string())?
     .to_string();
   let port = url.port_or_known_default().unwrap_or(443);
-  let address = format!("{host}:{port}");
 
-  let stream = TcpStream::connect(address).map_err(|error| error.to_string())?;
+  let stream = connect_with_timeout(&host, port, Duration::from_secs(3))?;
   stream
     .set_read_timeout(Some(Duration::from_secs(10)))
     .map_err(|error| error.to_string())?;
@@ -250,7 +266,9 @@ async fn send_api_request(
   }
 
   let method = Method::from_bytes(method.as_bytes()).map_err(|error| error.to_string())?;
-  let mut builder = Client::builder().timeout(Duration::from_secs(20));
+  let mut builder = Client::builder()
+    .connect_timeout(Duration::from_secs(3))
+    .timeout(Duration::from_secs(20));
 
   if parsed.scheme() == "https" {
     builder = builder
@@ -314,7 +332,9 @@ async fn send_adif_import_request(
     }
   }
 
-  let mut builder = Client::builder().timeout(Duration::from_secs(60));
+  let mut builder = Client::builder()
+    .connect_timeout(Duration::from_secs(3))
+    .timeout(Duration::from_secs(60));
   if parsed.scheme() == "https" {
     builder = builder
       .danger_accept_invalid_certs(true)
