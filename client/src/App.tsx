@@ -6,6 +6,7 @@ import { CurrentLogView } from './components/CurrentLogView'
 import { SettingsView } from './components/SettingsView'
 import { spots as fallbackSpots } from './data/mockData'
 import {
+  applyPreferredEndpoint,
   createContact,
   createLogbook,
   createPotaSpot,
@@ -296,6 +297,7 @@ function App() {
     setBusy('Connecting')
     try {
       const [nextOperator, nextLogbooks] = await Promise.all([fetchOperatorProfile(targetConnection), fetchLogbooks(targetConnection)])
+      const resolvedConnection = applyPreferredEndpoint(targetConnection)
       setOperator(nextOperator)
       setLogbooks(nextLogbooks)
       setCurrentLogbookId((current) => current ?? nextLogbooks[0]?.id ?? null)
@@ -314,9 +316,10 @@ function App() {
       } catch {
         setSpots(fallbackSpots)
       }
-      setConnection(targetConnection)
-      window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
-      setStatusMessage(`Connected to ${targetConnection.serverUrl} as ${nextOperator.callsign}.`)
+      setConnection(resolvedConnection)
+      setConnectionDraft((current) => (sameConnection(current, resolvedConnection) ? current : resolvedConnection))
+      window.localStorage.setItem(connectionStorageKey, JSON.stringify(resolvedConnection))
+      setStatusMessage(`Connected to ${resolvedConnection.serverUrl} as ${nextOperator.callsign}.`)
     } catch (error) {
       setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
     } finally {
@@ -328,10 +331,10 @@ function App() {
     setBusy('Trusting Server')
     try {
       const result = await probeServerCertificate(connectionDraft)
-      const updatedConnection = {
+      const updatedConnection = applyPreferredEndpoint({
         ...connectionDraft,
         pinnedFingerprint: result.fingerprint,
-      }
+      })
       setConnectionDraft(updatedConnection)
       window.localStorage.setItem(connectionStorageKey, JSON.stringify(updatedConnection))
       setStatusMessage(`Trusted server certificate from ${result.endpoint}.`)

@@ -38,6 +38,8 @@ type RawSettings = {
   admin_access: boolean
   qrz_username?: string | null
   qrz_configured: boolean
+  qrz_password_configured: boolean
+  qrz_api_key_configured: boolean
 }
 
 type RawAdifExport = {
@@ -165,7 +167,30 @@ function listServerEndpoints(connection: ClientConnectionSettings) {
 }
 
 function rememberSuccessfulEndpoint(connection: ClientConnectionSettings, endpoint: string) {
-  preferredEndpointByConnection.set(connectionKey(connection), normalizeServerUrl(endpoint))
+  const normalizedEndpoint = normalizeServerUrl(endpoint)
+  preferredEndpointByConnection.set(connectionKey(connection), normalizedEndpoint)
+}
+
+export function applyPreferredEndpoint(connection: ClientConnectionSettings): ClientConnectionSettings {
+  const preferredEndpoint = preferredEndpointByConnection.get(connectionKey(connection))
+  if (!preferredEndpoint) {
+    return connection
+  }
+
+  const orderedEndpoints = listServerEndpoints(connection)
+  if (!orderedEndpoints.includes(preferredEndpoint) || orderedEndpoints[0] === preferredEndpoint) {
+    return connection
+  }
+
+  const fallbackEndpoints = orderedEndpoints.filter((endpoint) => endpoint !== preferredEndpoint)
+  const updatedConnection = {
+    ...connection,
+    serverUrl: preferredEndpoint,
+    additionalServerUrls: fallbackEndpoints.join('\n'),
+  }
+
+  preferredEndpointByConnection.set(connectionKey(updatedConnection), preferredEndpoint)
+  return updatedConnection
 }
 
 async function requestJson<T>(connection: ClientConnectionSettings, path: string, init?: RequestInit): Promise<T> {
@@ -278,6 +303,8 @@ export async function fetchAppSettings(connection: ClientConnectionSettings): Pr
     adminAccess: raw.admin_access,
     qrzUsername: raw.qrz_username ?? undefined,
     qrzConfigured: raw.qrz_configured,
+    qrzPasswordConfigured: raw.qrz_password_configured,
+    qrzApiKeyConfigured: raw.qrz_api_key_configured,
   }
 }
 
@@ -309,6 +336,8 @@ export async function updateAppSettings(
     adminAccess: raw.admin_access,
     qrzUsername: raw.qrz_username ?? undefined,
     qrzConfigured: raw.qrz_configured,
+    qrzPasswordConfigured: raw.qrz_password_configured,
+    qrzApiKeyConfigured: raw.qrz_api_key_configured,
   }
 }
 

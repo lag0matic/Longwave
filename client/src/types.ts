@@ -142,6 +142,8 @@ export type AppSettings = {
   adminAccess: boolean
   qrzUsername?: string
   qrzConfigured: boolean
+  qrzPasswordConfigured: boolean
+  qrzApiKeyConfigured: boolean
 }
 
 export type ServerSettingsForm = {

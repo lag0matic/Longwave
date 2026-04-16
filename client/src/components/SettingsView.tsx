@@ -271,11 +271,20 @@ export function SettingsView(props: SettingsViewProps) {
           </label>
           <label>
             <span>QRZ Password</span>
-            <input type="password" value={props.settingsForm.qrzPassword} onChange={(event) => props.setSettingsForm((current) => ({ ...current, qrzPassword: event.target.value }))} placeholder="Enter to update" />
+            <input
+              type="password"
+              value={props.settingsForm.qrzPassword}
+              onChange={(event) => props.setSettingsForm((current) => ({ ...current, qrzPassword: event.target.value }))}
+              placeholder={props.appSettings?.qrzPasswordConfigured ? 'Stored on server. Enter a new value to replace it.' : 'Enter to update'}
+            />
           </label>
           <label>
             <span>QRZ Logbook API Key</span>
-            <input value={props.settingsForm.qrzApiKey} onChange={(event) => props.setSettingsForm((current) => ({ ...current, qrzApiKey: event.target.value }))} placeholder="Enter to update" />
+            <input
+              value={props.settingsForm.qrzApiKey}
+              onChange={(event) => props.setSettingsForm((current) => ({ ...current, qrzApiKey: event.target.value }))}
+              placeholder={props.appSettings?.qrzApiKeyConfigured ? 'Stored on server. Enter a new value to replace it.' : 'Enter to update'}
+            />
           </label>
           <button className="primary" type="submit">Save Server Settings</button>
         </form>

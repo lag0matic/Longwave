@@ -62,6 +62,8 @@ def build_settings_response(app_settings: AppSettingsRecord, *, admin_access: bo
         admin_access=admin_access,
         qrz_username=app_settings.qrz_username,
         qrz_configured=bool(app_settings.qrz_username and (app_settings.qrz_password or app_settings.qrz_api_key)),
+        qrz_password_configured=bool(app_settings.qrz_password),
+        qrz_api_key_configured=bool(app_settings.qrz_api_key),
         pota_configured=bool(app_settings.pota_api_key),
     )
 

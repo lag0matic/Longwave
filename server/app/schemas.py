@@ -44,6 +44,8 @@ class AppSettingsResponse(BaseModel):
     admin_access: bool = True
     qrz_username: str | None = None
     qrz_configured: bool
+    qrz_password_configured: bool = False
+    qrz_api_key_configured: bool = False
     pota_configured: bool
 
 
