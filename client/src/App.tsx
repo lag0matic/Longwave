@@ -97,11 +97,6 @@ function currentLogbookStorageKey(connection: ClientConnectionSettings) {
   return `longwave-current-logbook:${cacheScope(connection)}`
 }
 
-function setStored<T>(key: string, value: T) {
-  window.localStorage.setItem(key, JSON.stringify(value))
-  void desktopStoreSet(key, value)
-}
-
 async function getStoredValue<T>(key: string, fallback: T, desktopRuntime: boolean) {
   if (desktopRuntime) {
     const desktopValue = await desktopStoreGet<T>(key)
@@ -241,8 +236,16 @@ function App() {
   const [statusMessage, setStatusMessage] = useState('Connect to your server and choose a logbook to begin.')
   const [busy, setBusy] = useState<string | null>(null)
   const [settingsForm, setSettingsForm] = useState<ServerSettingsForm>({ stationCallsign: '', stationName: '', myGridSquare: '', myState: '', myCounty: '', qrzUsername: '', qrzPassword: '', qrzApiKey: '' })
+  const [desktopCacheReady, setDesktopCacheReady] = useState(() => !desktopRuntime)
 
   const currentLogbook = useMemo(() => logbooks.find((logbook) => logbook.id === currentLogbookId) ?? null, [logbooks, currentLogbookId])
+
+  function persistValue<T>(key: string, value: T) {
+    window.localStorage.setItem(key, JSON.stringify(value))
+    if (desktopCacheReady) {
+      void desktopStoreSet(key, value)
+    }
+  }
 
   useEffect(() => {
     if (!desktopRuntime) {
@@ -286,6 +289,7 @@ function App() {
           setContacts(storedContacts)
         }
       }
+      setDesktopCacheReady(true)
     }
 
     void hydrateDesktopState()
@@ -295,8 +299,12 @@ function App() {
     }
   }, [])
 
-  useEffect(() => { setStored(queueStorageKey, queuedSyncItems) }, [queuedSyncItems])
-  useEffect(() => { setStored(rigStorageKey, rigConnection) }, [rigConnection])
+  useEffect(() => {
+    persistValue(queueStorageKey, queuedSyncItems)
+  }, [desktopCacheReady, queuedSyncItems])
+  useEffect(() => {
+    persistValue(rigStorageKey, rigConnection)
+  }, [desktopCacheReady, rigConnection])
   useEffect(() => {
     const handleOnline = () => setIsOnline(true)
     const handleOffline = () => setIsOnline(false)
@@ -307,17 +315,23 @@ function App() {
       window.removeEventListener('offline', handleOffline)
     }
   }, [])
-  useEffect(() => { setStored(logbooksCacheKey(connection), logbooks) }, [connection, logbooks])
-  useEffect(() => { setStored(operatorCacheKey(connection), operator) }, [connection, operator])
-  useEffect(() => { setStored(settingsCacheKey(connection), appSettings) }, [connection, appSettings])
+  useEffect(() => {
+    const key = logbooksCacheKey(connection)
+    persistValue(key, logbooks)
+  }, [connection, desktopCacheReady, logbooks])
+  useEffect(() => {
+    const key = operatorCacheKey(connection)
+    persistValue(key, operator)
+  }, [connection, desktopCacheReady, operator])
+  useEffect(() => {
+    const key = settingsCacheKey(connection)
+    persistValue(key, appSettings)
+  }, [appSettings, connection, desktopCacheReady])
   useEffect(() => {
     if (!currentLogbookId) return
-    setStored(currentLogbookStorageKey(connection), currentLogbookId)
-  }, [connection, currentLogbookId])
-  useEffect(() => {
-    if (!currentLogbookId) return
-    setStored(contactsCacheKey(connection, currentLogbookId), contacts)
-  }, [connection, contacts, currentLogbookId])
+    const key = currentLogbookStorageKey(connection)
+    persistValue(key, currentLogbookId)
+  }, [connection, currentLogbookId, desktopCacheReady])
   useEffect(() => { if (appSettings) setSettingsForm((current) => ({ ...current, stationCallsign: appSettings.stationCallsign, stationName: appSettings.stationName, myGridSquare: appSettings.myGridSquare ?? '', myState: appSettings.myState ?? '', myCounty: appSettings.myCounty ?? '', qrzUsername: appSettings.qrzUsername ?? '' })) }, [appSettings])
   useEffect(() => { if (connection.apiToken) void refreshServerState(connection) }, [])
   useEffect(() => {
@@ -537,7 +551,7 @@ function App() {
       setActiveServerUrl(activeEndpoint)
       setConnection(targetConnection)
       setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
-      setStored(connectionStorageKey, targetConnection)
+      persistValue(connectionStorageKey, targetConnection)
       await syncLocalMirror(targetConnection, storedCurrentLogbookId ?? nextLogbooks[0]?.id ?? null)
       setStatusMessage(`Connected to ${activeEndpoint} as ${nextOperator.callsign}.`)
     } catch (error) {
@@ -585,7 +599,7 @@ function App() {
         }
         setConnection(targetConnection)
         setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
-        setStored(connectionStorageKey, targetConnection)
+        persistValue(connectionStorageKey, targetConnection)
         setStatusMessage(`Offline. Using cached data for ${cachedOperator?.callsign ?? cachedSettings?.stationCallsign ?? 'this server'}.`)
       } else {
         setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
@@ -605,7 +619,7 @@ function App() {
       }
       setActiveServerUrl(result.endpoint)
       setConnectionDraft(updatedConnection)
-      setStored(connectionStorageKey, updatedConnection)
+      persistValue(connectionStorageKey, updatedConnection)
       setStatusMessage(`Trusted server certificate from ${result.endpoint}.`)
     } catch (error) {
       setStatusMessage(`Server trust failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
@@ -616,7 +630,7 @@ function App() {
 
   function handleSaveLocalConnection() {
     setConnection(connectionDraft)
-    setStored(connectionStorageKey, connectionDraft)
+    persistValue(connectionStorageKey, connectionDraft)
     setActiveServerUrl(getPreferredEndpoint(connectionDraft))
     setStatusMessage('Saved local desktop settings.')
   }
@@ -625,7 +639,7 @@ function App() {
     try {
       const nextContacts = await fetchContacts(connection, logbookId)
       setContacts(nextContacts)
-      setStored(contactsCacheKey(connection, logbookId), nextContacts)
+      persistValue(contactsCacheKey(connection, logbookId), nextContacts)
     } catch (error) {
       const cachedContacts = await getStoredValue<Contact[]>(
         contactsCacheKey(connection, logbookId),
@@ -657,14 +671,14 @@ function App() {
 
     setOperator(nextOperator)
     setLogbooks(nextLogbooks)
-    setStored(operatorCacheKey(targetConnection), nextOperator)
-    setStored(logbooksCacheKey(targetConnection), nextLogbooks)
+    persistValue(operatorCacheKey(targetConnection), nextOperator)
+    persistValue(logbooksCacheKey(targetConnection), nextLogbooks)
 
     try {
       const nextSettings = await fetchAppSettings(targetConnection)
       if (!cancelled) {
         setAppSettings(nextSettings)
-        setStored(settingsCacheKey(targetConnection), nextSettings)
+        persistValue(settingsCacheKey(targetConnection), nextSettings)
       }
     } catch {
       // Admin settings may be unavailable; keep the last cached copy.
@@ -677,7 +691,7 @@ function App() {
 
       try {
         const nextContacts = await fetchContacts(targetConnection, logbook.id)
-        setStored(contactsCacheKey(targetConnection, logbook.id), nextContacts)
+        persistValue(contactsCacheKey(targetConnection, logbook.id), nextContacts)
         if (logbook.id === targetLogbookId) {
           setContacts(nextContacts)
         }
@@ -705,7 +719,7 @@ function App() {
         const targetConnection = connectionDraft
         if (!sameConnection(connection, targetConnection)) {
           setConnection(targetConnection)
-          setStored(connectionStorageKey, targetConnection)
+          persistValue(connectionStorageKey, targetConnection)
         }
         setActiveServerUrl(getPreferredEndpoint(targetConnection))
 
