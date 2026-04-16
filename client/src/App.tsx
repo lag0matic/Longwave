@@ -92,6 +92,10 @@ function contactsCacheKey(connection: ClientConnectionSettings, logbookId: strin
   return `longwave-contacts-cache:${cacheScope(connection)}:${logbookId}`
 }
 
+function currentLogbookStorageKey(connection: ClientConnectionSettings) {
+  return `longwave-current-logbook:${cacheScope(connection)}`
+}
+
 export function bandFromFrequencyKhz(frequencyKhz: number): string {
   if (frequencyKhz >= 1800 && frequencyKhz < 2000) return '160m'
   if (frequencyKhz >= 3500 && frequencyKhz < 4000) return '80m'
@@ -210,7 +214,7 @@ function App() {
   const [operator, setOperator] = useState<OperatorProfile | null>(() => loadStored(operatorCacheKey(initialConnection), null))
   const [appSettings, setAppSettings] = useState<AppSettings | null>(() => loadStored(settingsCacheKey(initialConnection), null))
   const [logbooks, setLogbooks] = useState<Logbook[]>(() => loadStored(logbooksCacheKey(initialConnection), []))
-  const [currentLogbookId, setCurrentLogbookId] = useState<string | null>(null)
+  const [currentLogbookId, setCurrentLogbookId] = useState<string | null>(() => loadStored(currentLogbookStorageKey(initialConnection), null))
   const [contacts, setContacts] = useState<Contact[]>([])
   const [spots, setSpots] = useState<Spot[]>(fallbackSpots)
   const [selectedSpot, setSelectedSpot] = useState<Spot>(fallbackSpots[0])
@@ -239,6 +243,10 @@ function App() {
   useEffect(() => { window.localStorage.setItem(logbooksCacheKey(connection), JSON.stringify(logbooks)) }, [connection, logbooks])
   useEffect(() => { window.localStorage.setItem(operatorCacheKey(connection), JSON.stringify(operator)) }, [connection, operator])
   useEffect(() => { window.localStorage.setItem(settingsCacheKey(connection), JSON.stringify(appSettings)) }, [connection, appSettings])
+  useEffect(() => {
+    if (!currentLogbookId) return
+    window.localStorage.setItem(currentLogbookStorageKey(connection), JSON.stringify(currentLogbookId))
+  }, [connection, currentLogbookId])
   useEffect(() => {
     if (!currentLogbookId) return
     window.localStorage.setItem(contactsCacheKey(connection, currentLogbookId), JSON.stringify(contacts))
@@ -409,7 +417,7 @@ function App() {
 
       <main className="app-main">
         <div className="status-banner">{statusMessage}</div>
-        {mainTab === 'logs' ? <LogsView {...{ connection, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
+        {mainTab === 'logs' ? <LogsView {...{ connection, isOnline, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
         {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, isOnline, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
         {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, activeServerUrl, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, saveServerSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
@@ -423,7 +431,14 @@ function App() {
       const activeEndpoint = getPreferredEndpoint(targetConnection)
       setOperator(nextOperator)
       setLogbooks(nextLogbooks)
-      setCurrentLogbookId((current) => current ?? nextLogbooks[0]?.id ?? null)
+      const storedCurrentLogbookId = loadStored<string | null>(currentLogbookStorageKey(targetConnection), null)
+      setCurrentLogbookId((current) => {
+        const preferredLogbookId = current ?? storedCurrentLogbookId
+        if (preferredLogbookId && nextLogbooks.some((logbook) => logbook.id === preferredLogbookId)) {
+          return preferredLogbookId
+        }
+        return nextLogbooks[0]?.id ?? null
+      })
       try {
         const nextSettings = await fetchAppSettings(targetConnection)
         setAppSettings(nextSettings)
@@ -452,7 +467,14 @@ function App() {
         setOperator(cachedOperator)
         setAppSettings(cachedSettings)
         setLogbooks(cachedLogbooks)
-        setCurrentLogbookId((current) => current ?? cachedLogbooks[0]?.id ?? null)
+        const storedCurrentLogbookId = loadStored<string | null>(currentLogbookStorageKey(targetConnection), null)
+        setCurrentLogbookId((current) => {
+          const preferredLogbookId = current ?? storedCurrentLogbookId
+          if (preferredLogbookId && cachedLogbooks.some((logbook) => logbook.id === preferredLogbookId)) {
+            return preferredLogbookId
+          }
+          return cachedLogbooks[0]?.id ?? null
+        })
         setConnection(targetConnection)
         setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
         window.localStorage.setItem(connectionStorageKey, JSON.stringify(targetConnection))
@@ -497,8 +519,12 @@ function App() {
     } catch (error) {
       const cachedContacts = loadStored<Contact[]>(contactsCacheKey(connection, logbookId), [])
       setContacts(cachedContacts)
-      if (cachedContacts.length > 0 || shouldQueueMutation(error)) {
+      if (cachedContacts.length > 0) {
         setStatusMessage(`Offline. Showing cached QSOs for ${currentLogbook?.name ?? 'this logbook'}.`)
+        return
+      }
+      if (shouldQueueMutation(error)) {
+        setStatusMessage(`Offline. No cached QSOs are stored yet for ${currentLogbook?.name ?? 'this logbook'}.`)
         return
       }
       throw error

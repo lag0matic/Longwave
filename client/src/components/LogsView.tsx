@@ -5,6 +5,7 @@ import { defaultNewLogbook, encodeLogbookNotes, type MainTab, type NewLogbookFor
 
 type LogsViewProps = {
   connection: ClientConnectionSettings
+  isOnline: boolean
   operator: OperatorProfile | null
   appSettings: AppSettings | null
   logbooks: Logbook[]
@@ -36,6 +37,10 @@ export function LogsView(props: LogsViewProps) {
 
   async function handleCreateLogbook(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!props.isOnline) {
+      props.setStatusMessage('Offline logbook creation is not available yet. Reconnect and create the logbook on the server first.')
+      return
+    }
     props.setBusy('Creating Logbook')
     try {
       const operatorCallsign = props.operator?.callsign ?? props.appSettings?.stationCallsign ?? 'N0CALL'
@@ -59,6 +64,10 @@ export function LogsView(props: LogsViewProps) {
   }
 
   async function handleDeleteLogbook(logbook: Logbook) {
+    if (!props.isOnline) {
+      props.setStatusMessage('Offline logbook deletion is not available. Reconnect to delete a whole logbook.')
+      return
+    }
     props.setBusy('Deleting Logbook')
     try {
       await props.deleteLogbook(props.connection, logbook.id)
@@ -74,6 +83,10 @@ export function LogsView(props: LogsViewProps) {
   }
 
   async function handleImportLogbook(file: File) {
+    if (!props.isOnline) {
+      props.setStatusMessage('Offline ADIF import is not available. Reconnect and import into the server-backed logbook list.')
+      return
+    }
     props.setBusy('Importing Logbook')
     try {
       const operatorCallsign = props.operator?.callsign ?? props.appSettings?.stationCallsign ?? 'N0CALL'
