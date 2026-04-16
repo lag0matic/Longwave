@@ -23,6 +23,31 @@ type FlrigResult = {
   message: string
 }
 
+function toErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  if (error && typeof error === 'object') {
+    const candidate = error as Record<string, unknown>
+    const detail = candidate.message ?? candidate.error ?? candidate.reason ?? candidate.details
+    if (typeof detail === 'string') {
+      return detail
+    }
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return 'Unknown error.'
+    }
+  }
+
+  return 'Unknown error.'
+}
+
 export async function readFlrigState(connection: FlrigConnection): Promise<FlrigState> {
   if (!connection.endpoint) {
     throw new Error('No FLrig endpoint configured on this client.')
@@ -34,9 +59,13 @@ export async function readFlrigState(connection: FlrigConnection): Promise<Flrig
     }
   }
 
-  return invoke<FlrigState>('read_flrig_state', {
-    endpoint: connection.endpoint,
-  })
+  try {
+    return await invoke<FlrigState>('read_flrig_state', {
+      endpoint: connection.endpoint,
+    })
+  } catch (error) {
+    throw new Error(toErrorMessage(error))
+  }
 }
 
 export async function tuneFlrig(
@@ -48,11 +77,18 @@ export async function tuneFlrig(
   }
 
   if (isDesktopRuntime()) {
-    return invoke<FlrigResult>('tune_flrig', {
-      endpoint: connection.endpoint,
-      frequencyHz: request.frequencyHz,
-      mode: request.mode,
-    })
+    try {
+      return await invoke<FlrigResult>('tune_flrig', {
+        endpoint: connection.endpoint,
+        frequencyHz: request.frequencyHz,
+        mode: request.mode,
+      })
+    } catch (error) {
+      return {
+        ok: false,
+        message: toErrorMessage(error),
+      }
+    }
   }
 
   return {
