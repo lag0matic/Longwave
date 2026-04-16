@@ -277,7 +277,15 @@ function App() {
       if (storedOperator !== null) setOperator(storedOperator)
       if (storedSettings !== null) setAppSettings(storedSettings)
       if (storedLogbooks) setLogbooks(storedLogbooks)
-      if (storedCurrentLogbookId) setCurrentLogbookId(storedCurrentLogbookId)
+      if (storedCurrentLogbookId) {
+        setCurrentLogbookId(storedCurrentLogbookId)
+        const storedContacts = await desktopStoreGet<Contact[]>(
+          contactsCacheKey(initialConnection, storedCurrentLogbookId),
+        )
+        if (!cancelled && storedContacts) {
+          setContacts(storedContacts)
+        }
+      }
     }
 
     void hydrateDesktopState()
@@ -533,21 +541,48 @@ function App() {
       await syncLocalMirror(targetConnection, storedCurrentLogbookId ?? nextLogbooks[0]?.id ?? null)
       setStatusMessage(`Connected to ${activeEndpoint} as ${nextOperator.callsign}.`)
     } catch (error) {
-      const cachedOperator = loadStored<OperatorProfile | null>(operatorCacheKey(targetConnection), null)
-      const cachedSettings = loadStored<AppSettings | null>(settingsCacheKey(targetConnection), null)
-      const cachedLogbooks = loadStored<Logbook[]>(logbooksCacheKey(targetConnection), [])
+      const cachedOperator = await getStoredValue<OperatorProfile | null>(
+        operatorCacheKey(targetConnection),
+        null,
+        desktopRuntime,
+      )
+      const cachedSettings = await getStoredValue<AppSettings | null>(
+        settingsCacheKey(targetConnection),
+        null,
+        desktopRuntime,
+      )
+      const cachedLogbooks = await getStoredValue<Logbook[]>(
+        logbooksCacheKey(targetConnection),
+        [],
+        desktopRuntime,
+      )
       if (cachedOperator || cachedSettings || cachedLogbooks.length > 0) {
         setOperator(cachedOperator)
         setAppSettings(cachedSettings)
         setLogbooks(cachedLogbooks)
-        const storedCurrentLogbookId = loadStored<string | null>(currentLogbookStorageKey(targetConnection), null)
+        const storedCurrentLogbookId = await getStoredValue<string | null>(
+          currentLogbookStorageKey(targetConnection),
+          null,
+          desktopRuntime,
+        )
+        let nextLogbookId: string | null = null
         setCurrentLogbookId((current) => {
           const preferredLogbookId = current ?? storedCurrentLogbookId
           if (preferredLogbookId && cachedLogbooks.some((logbook) => logbook.id === preferredLogbookId)) {
+            nextLogbookId = preferredLogbookId
             return preferredLogbookId
           }
-          return cachedLogbooks[0]?.id ?? null
+          nextLogbookId = cachedLogbooks[0]?.id ?? null
+          return nextLogbookId
         })
+        if (nextLogbookId) {
+          const cachedContacts = await getStoredValue<Contact[]>(
+            contactsCacheKey(targetConnection, nextLogbookId),
+            [],
+            desktopRuntime,
+          )
+          setContacts(cachedContacts)
+        }
         setConnection(targetConnection)
         setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
         setStored(connectionStorageKey, targetConnection)
