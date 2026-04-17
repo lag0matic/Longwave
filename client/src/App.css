@@ -611,11 +611,11 @@ button:disabled {
 }
 
 .world-map {
-  min-height: 22rem;
+  min-height: 34rem;
   overflow: hidden;
   border: 1px solid var(--border-soft);
   border-radius: 0.55rem;
-  background: #090d14;
+  background: #070b12;
 }
 
 .hidden-input {
