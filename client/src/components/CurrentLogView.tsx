@@ -38,13 +38,78 @@ type CurrentLogViewProps = {
 }
 
 function buildContactPins(contacts: Contact[]) {
-  return contacts.filter((contact) => typeof contact.lat === 'number' && typeof contact.lon === 'number').map((contact) => ({
-    id: contact.id,
-    callsign: contact.stationCallsign,
-    lat: contact.lat as number,
-    lon: contact.lon as number,
-    label: contact.country ?? contact.state ?? contact.parkReference ?? 'Worked contact',
-  }))
+  return contacts.flatMap((contact) => {
+    const derived = contactCoordinates(contact)
+    if (!derived) {
+      return []
+    }
+
+    return [{
+      id: contact.id,
+      callsign: contact.stationCallsign,
+      lat: derived.lat,
+      lon: derived.lon,
+      label: contact.country ?? contact.state ?? contact.parkReference ?? contact.gridSquare ?? 'Worked contact',
+    }]
+  })
+}
+
+function contactCoordinates(contact: Contact) {
+  if (typeof contact.lat === 'number' && typeof contact.lon === 'number') {
+    return {
+      lat: contact.lat,
+      lon: contact.lon,
+    }
+  }
+
+  return maidenheadToLatLon(contact.gridSquare)
+}
+
+function maidenheadToLatLon(gridSquare?: string) {
+  if (!gridSquare) {
+    return null
+  }
+
+  const grid = gridSquare.trim().toUpperCase()
+  if (grid.length < 4) {
+    return null
+  }
+
+  const first = grid.charCodeAt(0) - 65
+  const second = grid.charCodeAt(1) - 65
+  const third = Number.parseInt(grid[2] ?? '', 10)
+  const fourth = Number.parseInt(grid[3] ?? '', 10)
+
+  if (
+    first < 0 || first > 17
+    || second < 0 || second > 17
+    || Number.isNaN(third) || third < 0 || third > 9
+    || Number.isNaN(fourth) || fourth < 0 || fourth > 9
+  ) {
+    return null
+  }
+
+  let lon = -180 + first * 20 + third * 2
+  let lat = -90 + second * 10 + fourth
+  let lonWidth = 2
+  let latHeight = 1
+
+  if (grid.length >= 6) {
+    const fifth = grid.charCodeAt(4) - 65
+    const sixth = grid.charCodeAt(5) - 65
+    if (fifth < 0 || fifth > 23 || sixth < 0 || sixth > 23) {
+      return null
+    }
+    lon += fifth * (2 / 24)
+    lat += sixth * (1 / 24)
+    lonWidth = 2 / 24
+    latHeight = 1 / 24
+  }
+
+  return {
+    lat: lat + latHeight / 2,
+    lon: lon + lonWidth / 2,
+  }
 }
 
 function formatLocalDateTime(qsoDate: string, timeOn: string) {
