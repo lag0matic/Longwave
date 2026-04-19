@@ -489,6 +489,40 @@ export async function createContact(
   return mapContact(raw)
 }
 
+export async function updateContact(
+  connection: ClientConnectionSettings,
+  contactId: string,
+  draft: ContactDraft,
+): Promise<Contact> {
+  const raw = await requestJson<RawContact>(connection, `/contacts/${encodeURIComponent(contactId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      station_callsign: draft.stationCallsign,
+      operator_callsign: draft.operatorCallsign,
+      qso_date: draft.qsoDate,
+      time_on: draft.timeOn,
+      band: draft.band,
+      mode: draft.mode,
+      frequency_khz: draft.frequencyKhz,
+      rst_sent: draft.rstSent,
+      rst_recvd: draft.rstRcvd,
+      tx_power: draft.txPower,
+      name: draft.name,
+      qth: draft.qth,
+      county: draft.county,
+      park_reference: draft.parkReference,
+      grid_square: draft.gridSquare,
+      country: draft.country,
+      state: draft.state,
+      dxcc: draft.dxcc,
+      lat: draft.lat,
+      lon: draft.lon,
+    }),
+  })
+
+  return mapContact(raw)
+}
+
 export async function deleteContact(
   connection: ClientConnectionSettings,
   contactId: string,

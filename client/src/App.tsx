@@ -22,6 +22,7 @@ import {
   importLogbookAdif,
   probeServerCertificate,
   lookupCallsign,
+  updateContact,
   uploadLogbookToQrz,
   updateAppSettings,
 } from './services/api'
@@ -264,6 +265,32 @@ function createQueuedContact(draft: ContactDraft, mutationId: string): Contact {
   }
 }
 
+function draftFromContact(contact: Contact): ContactDraft {
+  return {
+    stationCallsign: contact.stationCallsign,
+    operatorCallsign: contact.operatorCallsign,
+    logbookId: contact.logbookId,
+    qsoDate: contact.qsoDate,
+    timeOn: contact.timeOn,
+    mode: contact.mode,
+    frequencyKhz: contact.frequencyKhz,
+    band: contact.band,
+    rstSent: contact.rstSent,
+    rstRcvd: contact.rstRcvd,
+    txPower: contact.txPower,
+    name: contact.name,
+    qth: contact.qth,
+    county: contact.county,
+    parkReference: contact.parkReference,
+    gridSquare: contact.gridSquare,
+    country: contact.country,
+    state: contact.state,
+    dxcc: contact.dxcc,
+    lat: contact.lat,
+    lon: contact.lon,
+  }
+}
+
 function createOfflineLogbookId() {
   return `offline-logbook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -304,6 +331,7 @@ function App() {
   const [queuedSyncItems, setQueuedSyncItems] = useState<PendingMutation[]>(() => loadStored(queueStorageKey, []))
   const [statusMessage, setStatusMessage] = useState('Connect to your server and choose a logbook to begin.')
   const [busy, setBusy] = useState<string | null>(null)
+  const [editingContactId, setEditingContactId] = useState<string | null>(null)
   const [settingsForm, setSettingsForm] = useState<ServerSettingsForm>({ stationCallsign: '', stationName: '', myGridSquare: '', myState: '', myCounty: '', qrzUsername: '', qrzPassword: '', qrzApiKey: '' })
   const [desktopCacheReady, setDesktopCacheReady] = useState(() => !desktopRuntime)
 
@@ -614,7 +642,7 @@ function App() {
       <main className="app-main">
         <div className="status-banner">{statusMessage}</div>
         {mainTab === 'logs' ? <LogsView {...{ connection, isOnline, operator, appSettings, logbooks, currentLogbookId, setCurrentLogbookId, setMainTab, busy, setBusy, statusMessage, setStatusMessage, createLogbook, createOfflineLogbook: handleCreateOfflineLogbook, setLogbooks, deleteLogbook, importLogbookAdif, defaultNewLogbook }} /> : null}
-        {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, isOnline, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta }} /> : null}
+        {mainTab === 'current' && currentLogbook ? <CurrentLogView {...{ connection, currentLogbook, logbookTab, setLogbookTab, contacts, spots, selectedSpot, setSelectedSpot, draft, setDraft, lookupResult, rigConnection, rigState, isOnline, queuedSyncItems, busy, setBusy, setStatusMessage, refreshCurrentLogContacts, refreshLogbooks: () => fetchLogbooks(connection).then(setLogbooks), handleLookupCallsign, handleSaveContact, handleDeleteContact, handleReadRig, handleTuneRig, handleExportAdif, handleUploadQrz, handlePostSpot, readLogbookMeta, editingContactId, handleEditContact, handleCancelEdit }} /> : null}
         {mainTab === 'settings' ? <SettingsView {...{ connection, connectionDraft, activeServerUrl, setConnectionDraft, handleSaveLocalConnection, rigConnection, setRigConnection, settingsForm, setSettingsForm, appSettings, busy, setBusy, setStatusMessage, refreshServerState, handleSaveSettings, saveServerSettings, handleTrustServer, handleReadRig, rigState }} /> : null}
       </main>
     </div>
@@ -924,12 +952,17 @@ function App() {
     setBusy('Saving QSO')
     try {
       const currentMeta = currentLogbook ? readLogbookMeta(currentLogbook) : null
-      await createContact(connection, {
+      const payload = {
         ...draft,
         logbookId: currentLogbookId,
         band: bandFromFrequencyKhz(draft.frequencyKhz) || draft.band,
         parkReference: currentMeta?.kind === 'pota' ? draft.parkReference : undefined,
-      })
+      }
+      if (editingContactId) {
+        await updateContact(connection, editingContactId, payload)
+      } else {
+        await createContact(connection, payload)
+      }
       await refreshCurrentLogContacts(currentLogbookId)
       setLogbooks(await fetchLogbooks(connection))
       const nextMeta = currentLogbook ? readLogbookMeta(currentLogbook) : null
@@ -938,11 +971,14 @@ function App() {
         txPower: current.txPower,
         parkReference: nextMeta?.kind === 'pota' ? current.parkReference : undefined,
       }))
+      setEditingContactId(null)
       setLookupResult(null)
       lastAutoLookupRef.current = ''
-      setStatusMessage('Saved QSO.')
+      setStatusMessage(editingContactId ? 'Updated QSO.' : 'Saved QSO.')
     } catch (error) {
-      if (shouldQueueMutation(error)) {
+      if (editingContactId && shouldQueueMutation(error)) {
+        setStatusMessage('Offline QSO editing is not supported yet. Reconnect and try again.')
+      } else if (!editingContactId && shouldQueueMutation(error)) {
         const mutationId = createMutationId()
         const queuedDraft = { ...draft, logbookId: currentLogbookId }
         setQueuedSyncItems((current) => [{ id: mutationId, entityType: 'contact', action: 'create', createdAt: new Date().toISOString(), payloadSummary: `Queued QSO with ${draft.stationCallsign}`, payload: queuedDraft }, ...current])
@@ -959,6 +995,31 @@ function App() {
     } finally {
       setBusy(null)
     }
+  }
+
+  function handleEditContact(contact: Contact) {
+    setDraft({
+      ...draftFromContact(contact),
+      logbookId: currentLogbookId ?? contact.logbookId,
+    })
+    setEditingContactId(contact.id)
+    setLookupResult(null)
+    lastAutoLookupRef.current = ''
+    setStatusMessage(`Editing QSO with ${contact.stationCallsign}.`)
+  }
+
+  function handleCancelEdit() {
+    const nextMeta = currentLogbook ? readLogbookMeta(currentLogbook) : null
+    const operatorCallsign = draft.operatorCallsign || currentLogbook?.operatorCallsign || operator?.callsign || appSettings?.stationCallsign || 'N0CALL'
+    setDraft((current) => ({
+      ...createEmptyDraft(operatorCallsign, currentLogbookId ?? current.logbookId),
+      txPower: current.txPower,
+      parkReference: nextMeta?.kind === 'pota' ? current.parkReference : undefined,
+    }))
+    setEditingContactId(null)
+    setLookupResult(null)
+    lastAutoLookupRef.current = ''
+    setStatusMessage('Canceled QSO edit.')
   }
 
   async function handleReadRig() {
@@ -1049,6 +1110,9 @@ function App() {
       await deleteContact(connection, contact.id)
       await refreshCurrentLogContacts(currentLogbookId)
       setLogbooks(await fetchLogbooks(connection))
+      if (editingContactId === contact.id) {
+        handleCancelEdit()
+      }
       setStatusMessage(`Deleted QSO with ${contact.stationCallsign}.`)
     } catch (error) {
       if (shouldQueueMutation(error)) {
@@ -1061,6 +1125,9 @@ function App() {
               ? { ...logbook, contactCount: Math.max(0, logbook.contactCount - 1), syncState: 'pending' }
               : logbook
           )))
+          if (editingContactId === contact.id) {
+            handleCancelEdit()
+          }
           setStatusMessage(`Removed queued QSO with ${contact.stationCallsign}.`)
         } else {
           const mutationId = createMutationId()
@@ -1082,6 +1149,9 @@ function App() {
               ? { ...logbook, contactCount: Math.max(0, logbook.contactCount - 1), syncState: 'pending' }
               : logbook
           )))
+          if (editingContactId === contact.id) {
+            handleCancelEdit()
+          }
           setStatusMessage(`Queued delete for ${contact.stationCallsign}.`)
         }
       } else {

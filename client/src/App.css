@@ -529,6 +529,19 @@ button:disabled {
   color: var(--text-main);
 }
 
+.entries-actions {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-start;
+}
+
+.table-action {
+  min-height: 1.6rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.74rem;
+  line-height: 1;
+}
+
 .spots-pane,
 .empty-state {
   margin-top: 1rem;

@@ -35,6 +35,9 @@ type CurrentLogViewProps = {
   handleUploadQrz: () => Promise<void>
   handlePostSpot: (selfSpot: boolean, comment: string) => Promise<void>
   readLogbookMeta: (logbook: Logbook) => { kind: 'standard' | 'pota'; potaMode: 'hunting' | 'activating' }
+  editingContactId: string | null
+  handleEditContact: (contact: Contact) => void
+  handleCancelEdit: () => void
 }
 
 function buildContactPins(contacts: Contact[]) {
@@ -276,7 +279,8 @@ export function CurrentLogView(props: CurrentLogViewProps) {
           <button onClick={() => void props.handleTuneRig()}>Tune Rig</button>
           <button onClick={() => void props.handleExportAdif()} disabled={props.busy === 'Exporting ADIF'}>{props.busy === 'Exporting ADIF' ? 'Exporting...' : 'Export ADIF'}</button>
           <button onClick={() => void props.handleUploadQrz()} disabled={props.busy === 'Uploading QRZ'}>{props.busy === 'Uploading QRZ' ? 'Uploading...' : 'Upload QRZ'}</button>
-          <button className="primary" onClick={() => void props.handleSaveContact()} disabled={props.busy === 'Saving QSO'}>{props.busy === 'Saving QSO' ? 'Saving...' : 'Save QSO'}</button>
+          {props.editingContactId ? <button onClick={props.handleCancelEdit}>Cancel Edit</button> : null}
+          <button className="primary" onClick={() => void props.handleSaveContact()} disabled={props.busy === 'Saving QSO'}>{props.busy === 'Saving QSO' ? 'Saving...' : props.editingContactId ? 'Update QSO' : 'Save QSO'}</button>
         </div>
 
         {props.lookupResult ? (
@@ -343,17 +347,26 @@ export function CurrentLogView(props: CurrentLogViewProps) {
                 <span>{contact.frequencyKhz.toFixed(3)}</span>
                 {meta.kind === 'pota' ? <span>{contact.parkReference ?? '--'}</span> : null}
                 <span>{formatLocation(contact)}</span>
-                <button
-                  className="danger"
-                  onClick={() => {
-                    if (window.confirm(`Delete QSO with ${contact.stationCallsign} on ${contact.qsoDate} ${contact.timeOn}?`)) {
-                      void props.handleDeleteContact(contact)
-                    }
-                  }}
-                  disabled={props.busy === 'Deleting QSO'}
-                >
-                  {props.busy === 'Deleting QSO' ? 'Deleting...' : 'Delete'}
-                </button>
+                <div className="entries-actions">
+                  <button
+                    className="table-action"
+                    onClick={() => props.handleEditContact(contact)}
+                    disabled={props.busy === 'Saving QSO' || props.busy === 'Deleting QSO'}
+                  >
+                    {props.editingContactId === contact.id ? 'Editing' : 'Edit'}
+                  </button>
+                  <button
+                    className="danger table-action"
+                    onClick={() => {
+                      if (window.confirm(`Delete QSO with ${contact.stationCallsign} on ${contact.qsoDate} ${contact.timeOn}?`)) {
+                        void props.handleDeleteContact(contact)
+                      }
+                    }}
+                    disabled={props.busy === 'Deleting QSO'}
+                  >
+                    {props.busy === 'Deleting QSO' ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
