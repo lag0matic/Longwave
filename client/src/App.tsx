@@ -311,6 +311,8 @@ function App() {
   const desktopRuntime = isDesktopRuntime()
   const lastAutoLookupRef = useRef('')
   const syncInFlightRef = useRef(false)
+  const isMountedRef = useRef(true)
+  const isShuttingDownRef = useRef(false)
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [mainTab, setMainTab] = useState<MainTab>('logs')
   const [logbookTab, setLogbookTab] = useState<LogbookSubTab>('qsos')
@@ -337,12 +339,38 @@ function App() {
 
   const currentLogbook = useMemo(() => logbooks.find((logbook) => logbook.id === currentLogbookId) ?? null, [logbooks, currentLogbookId])
 
+  function beginShutdown() {
+    isShuttingDownRef.current = true
+  }
+
+  function canUpdateState() {
+    return isMountedRef.current && !isShuttingDownRef.current
+  }
+
   function persistValue<T>(key: string, value: T) {
     window.localStorage.setItem(key, JSON.stringify(value))
-    if (desktopCacheReady) {
+    if (desktopCacheReady && !isShuttingDownRef.current) {
       void desktopStoreSet(key, value)
     }
   }
+
+  useEffect(() => {
+    isMountedRef.current = true
+
+    const handleBeforeUnload = () => {
+      beginShutdown()
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handleBeforeUnload)
+
+    return () => {
+      beginShutdown()
+      isMountedRef.current = false
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handleBeforeUnload)
+    }
+  }, [])
 
   useEffect(() => {
     if (!desktopRuntime) {
@@ -372,6 +400,10 @@ function App() {
         return
       }
 
+      if (!canUpdateState()) {
+        return
+      }
+
       if (storedQueue) setQueuedSyncItems(storedQueue)
       if (storedRig) setRigConnection(storedRig)
       if (storedOperator !== null) setOperator(storedOperator)
@@ -382,11 +414,13 @@ function App() {
         const storedContacts = await desktopStoreGet<Contact[]>(
           contactsCacheKey(initialConnection, storedCurrentLogbookId),
         )
-        if (!cancelled && storedContacts) {
+        if (!cancelled && canUpdateState() && storedContacts) {
           setContacts(storedContacts)
         }
       }
-      setDesktopCacheReady(true)
+      if (canUpdateState()) {
+        setDesktopCacheReady(true)
+      }
     }
 
     void hydrateDesktopState()
@@ -454,7 +488,7 @@ function App() {
     })
   }, [currentLogbook, currentLogbookId, operator?.callsign, appSettings?.stationCallsign])
   useEffect(() => {
-    if (!currentLogbookId) return
+    if (!currentLogbookId || isShuttingDownRef.current) return
     const logbookId = currentLogbookId
 
     let cancelled = false
@@ -467,6 +501,10 @@ function App() {
       )
 
       if (cancelled) {
+        return
+      }
+
+      if (!canUpdateState()) {
         return
       }
 
@@ -486,7 +524,7 @@ function App() {
     }
   }, [connection, connection.apiToken, currentLogbookId, desktopRuntime, isOnline, queuedSyncItems])
   useEffect(() => {
-    if (!connection.apiToken || queuedSyncItems.length === 0 || syncInFlightRef.current || !isOnline) {
+    if (!connection.apiToken || queuedSyncItems.length === 0 || syncInFlightRef.current || !isOnline || isShuttingDownRef.current) {
       return
     }
 
@@ -495,8 +533,15 @@ function App() {
 
     void (async () => {
       try {
+        if (!canUpdateState()) {
+          return
+        }
+
         if (queuedMutation.entityType === 'logbook' && queuedMutation.action === 'create') {
           const created = await createLogbook(connection, queuedMutation.payload.draft)
+          if (!canUpdateState()) {
+            return
+          }
           setLogbooks((current) => current.map((logbook) => (
             logbook.id === queuedMutation.payload.localLogbookId
               ? { ...created, syncState: 'synced' }
@@ -524,6 +569,9 @@ function App() {
           setStatusMessage(`Synced offline logbook ${created.name}.`)
         } else if (queuedMutation.entityType === 'contact' && queuedMutation.action === 'create') {
           await createContact(connection, queuedMutation.payload)
+          if (!canUpdateState()) {
+            return
+          }
           if (currentLogbookId === queuedMutation.payload.logbookId) {
             await refreshCurrentLogContacts(queuedMutation.payload.logbookId)
           }
@@ -538,6 +586,9 @@ function App() {
               throw error
             }
           }
+          if (!canUpdateState()) {
+            return
+          }
           if (currentLogbookId === queuedMutation.payload.logbookId) {
             await refreshCurrentLogContacts(queuedMutation.payload.logbookId)
           }
@@ -546,11 +597,14 @@ function App() {
           setStatusMessage(`Synced queued delete for ${queuedMutation.payload.stationCallsign}.`)
         } else if (queuedMutation.entityType === 'spot' && queuedMutation.action === 'create') {
           await createPotaSpot(connection, queuedMutation.payload)
+          if (!canUpdateState()) {
+            return
+          }
           setQueuedSyncItems((current) => current.filter((item) => item.id !== queuedMutation.id))
           setStatusMessage(`Synced queued spot for ${queuedMutation.payload.activatorCallsign}.`)
         }
       } catch (error) {
-        if (!shouldQueueMutation(error)) {
+        if (!shouldQueueMutation(error) && canUpdateState()) {
           setStatusMessage(`Queued sync failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
         }
       } finally {
@@ -559,7 +613,7 @@ function App() {
     })()
   }, [connection, currentLogbookId, isOnline, queuedSyncItems])
   useEffect(() => {
-    if (!isOnline || !connection.apiToken) {
+    if (!isOnline || !connection.apiToken || isShuttingDownRef.current) {
       return
     }
     if (queuedSyncItems.length > 0) {
@@ -568,14 +622,14 @@ function App() {
     void refreshServerState(connection)
   }, [connection, isOnline, queuedSyncItems.length])
   useEffect(() => {
-    if (!connection.apiToken) {
+    if (!connection.apiToken || isShuttingDownRef.current) {
       return
     }
 
     let cancelled = false
 
     async function syncWorkingCopySilently() {
-      if (document.visibilityState === 'hidden' || !navigator.onLine || queuedSyncItems.length > 0) {
+      if (document.visibilityState === 'hidden' || !navigator.onLine || queuedSyncItems.length > 0 || isShuttingDownRef.current) {
         return
       }
 
@@ -608,6 +662,7 @@ function App() {
     const normalized = draft.stationCallsign.trim().toUpperCase()
     if (mainTab !== 'current') return
     if (!connection.apiToken) return
+    if (isShuttingDownRef.current) return
     if (normalized.length < 3) {
       lastAutoLookupRef.current = ''
       if (!normalized) {
@@ -649,9 +704,15 @@ function App() {
   )
 
   async function refreshServerState(targetConnection: ClientConnectionSettings) {
+    if (isShuttingDownRef.current) {
+      return
+    }
     setBusy('Connecting')
     try {
       const [nextOperator, nextLogbooks] = await Promise.all([fetchOperatorProfile(targetConnection), fetchLogbooks(targetConnection)])
+      if (!canUpdateState()) {
+        return
+      }
       const activeEndpoint = getPreferredEndpoint(targetConnection)
       setOperator(nextOperator)
       setLogbooks(nextLogbooks)
@@ -683,6 +744,9 @@ function App() {
       setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
       persistValue(connectionStorageKey, targetConnection)
       await syncLocalMirror(targetConnection, storedCurrentLogbookId ?? nextLogbooks[0]?.id ?? null)
+      if (!canUpdateState()) {
+        return
+      }
       setStatusMessage(`Connected to ${activeEndpoint} as ${nextOperator.callsign}.`)
     } catch (error) {
       const cachedOperator = await getStoredValue<OperatorProfile | null>(
@@ -701,6 +765,9 @@ function App() {
         desktopRuntime,
       )
       if (cachedOperator || cachedSettings || cachedLogbooks.length > 0) {
+        if (!canUpdateState()) {
+          return
+        }
         setOperator(cachedOperator)
         setAppSettings(cachedSettings)
         setLogbooks(cachedLogbooks)
@@ -731,11 +798,13 @@ function App() {
         setConnectionDraft((current) => (sameConnection(current, targetConnection) ? current : targetConnection))
         persistValue(connectionStorageKey, targetConnection)
         setStatusMessage(`Offline. Using cached data for ${cachedOperator?.callsign ?? cachedSettings?.stationCallsign ?? 'this server'}.`)
-      } else {
+      } else if (canUpdateState()) {
         setStatusMessage(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error.'}`)
       }
     } finally {
-      setBusy(null)
+      if (canUpdateState()) {
+        setBusy(null)
+      }
     }
   }
 
@@ -768,6 +837,9 @@ function App() {
   async function refreshCurrentLogContacts(logbookId: string) {
     try {
       const nextContacts = await fetchContacts(connection, logbookId)
+      if (!canUpdateState()) {
+        return
+      }
       setContacts(applyPendingMutationsToContacts(nextContacts, queuedSyncItems, logbookId))
       persistValue(contactsCacheKey(connection, logbookId), nextContacts)
     } catch (error) {
@@ -776,6 +848,9 @@ function App() {
         [],
         desktopRuntime,
       )
+      if (!canUpdateState()) {
+        return
+      }
       setContacts(applyPendingMutationsToContacts(cachedContacts, queuedSyncItems, logbookId))
       if (cachedContacts.length > 0) {
         setStatusMessage(`Offline. Showing cached QSOs for ${currentLogbook?.name ?? 'this logbook'}.`)
@@ -795,7 +870,7 @@ function App() {
       fetchLogbooks(targetConnection),
     ])
 
-    if (cancelled) {
+    if (cancelled || !canUpdateState()) {
       return
     }
 
@@ -806,7 +881,7 @@ function App() {
 
     try {
       const nextSettings = await fetchAppSettings(targetConnection)
-      if (!cancelled) {
+      if (!cancelled && canUpdateState()) {
         setAppSettings(nextSettings)
         persistValue(settingsCacheKey(targetConnection), nextSettings)
       }
@@ -815,25 +890,25 @@ function App() {
     }
 
     for (const logbook of nextLogbooks) {
-      if (cancelled) {
+      if (cancelled || !canUpdateState()) {
         return
       }
 
       try {
         const nextContacts = await fetchContacts(targetConnection, logbook.id)
         persistValue(contactsCacheKey(targetConnection, logbook.id), nextContacts)
-        if (logbook.id === targetLogbookId) {
+        if (logbook.id === targetLogbookId && canUpdateState()) {
           setContacts(nextContacts)
         }
       } catch {
         const cachedContacts = loadStored<Contact[]>(contactsCacheKey(targetConnection, logbook.id), [])
-        if (logbook.id === targetLogbookId && cachedContacts.length > 0) {
+        if (logbook.id === targetLogbookId && cachedContacts.length > 0 && canUpdateState()) {
           setContacts(cachedContacts)
         }
       }
     }
 
-    if (targetLogbookId && !nextLogbooks.some((logbook) => logbook.id === targetLogbookId)) {
+    if (targetLogbookId && !nextLogbooks.some((logbook) => logbook.id === targetLogbookId) && canUpdateState()) {
       setCurrentLogbookId(nextLogbooks[0]?.id ?? null)
     }
   }
